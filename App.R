@@ -69,7 +69,10 @@ library(zip) # to create zip files
 ########################################################################################################################################
 # Function used in the script
 ########################################################################################################################################
+
 # Define a function to check normality status of the data
+#========================================================================================================================================
+
 check_normality <- function(shapiro_df) {
   # Assume normality is true initially
   flag_normal <- TRUE
@@ -86,7 +89,45 @@ check_normality <- function(shapiro_df) {
 }
 
 
+
+# Generate CLD values for parametric data
+#========================================================================================================================================
+
+generate_cld_parametric <- function(tukey_df, var1_col, var2_col) {
+  tukey_df %>%
+    group_by(!!sym(var1_col)) %>%
+    summarise(
+      cld = list(multcompView::multcompLetters(
+        setNames(p.adj, paste(group1, group2, sep = "-")),
+        Letters = letters
+      )$Letters)
+    ) %>%
+    unnest_longer(cld) %>%
+    rename(!!sym(var2_col) := cld_id)
+}
+
+
+# Generate CLD values for non-parametric data
+#=======================================================================================================================================
+
+generate_cld_nonparametric <- function(dunn_df, var1_col, var2_col) {
+  dunn_df %>%
+    dplyr::group_by(!!sym(var1_col)) %>%
+    dplyr::summarise(
+      cld = list(multcompView::multcompLetters(
+        setNames(p.adj, paste(group1, group2, sep = "-")),
+        Letters = letters
+      )$Letters),
+      .groups = 'drop'
+    ) %>%
+    tidyr::unnest_longer(cld) %>%
+    dplyr::mutate(!!sym(var2_col) := names(cld)) %>%
+    dplyr::select(!!sym(var1_col), !!sym(var2_col), cld)
+}
+
 # Define a function to perform Dunn test
+#========================================================================================================================================
+
 test_dunn <- function(df_data, var1, var2, MEASURE_COL) {
   pval <- df_data %>%
     group_by(!!sym(var1)) %>%
@@ -137,9 +178,18 @@ ui <- fluidPage(
       colourInput("fill_color", "Fill color", value = "ivory1"),           # Define the color of the fill
       colourInput("point_color", "Point color", value = "darkgreen"),      # Define the color of the points
       uiOutput("columnSelect"),                                            # Display the column selection
+      tags$hr(),                                                          # Add a horizontal line
       actionButton("start_analysis", "Start Analysis"),                    # Button to start the analysis
       downloadButton("download_parametric", "Download All Analysis Results for parametric data"), # Button to download the results for parametric data
-      downloadButton("download_non_parametric", "Download All Analysis Results for non-parametric data") # Button to download the results for non-parametric data
+      downloadButton("download_non_parametric", "Download All Analysis Results for non-parametric data"), # Button to download the results for non-parametric data
+      
+      # Add a download button and format selection input
+      tags$hr(),                                                        # Add a horizontal line
+      tags$p(tags$strong("Save the plot :")),
+      selectInput("file_format", "Choose file format", choices = c("svg", "png", "pdf")),
+      tags$p("Your plot will be saved to download folder"),
+      shinySaveButton("save_plot", "Save Plot", "Save plot as...", filetype = list(svg = "svg", png = "png", pdf = "pdf"))
+        
     ),
  
     # Define the main panel   
@@ -155,6 +205,7 @@ ui <- fluidPage(
     )
   )
 )
+
 
 
 ########################################################################################################################################
@@ -389,13 +440,7 @@ server <- function(input, output, session) {
       rstatix::tukey_hsd(as.formula(paste(MEASURE_COL, "~", var2)))
     
     # CLD letters for parametric test
-    cld_table_parametric <- tukey_results %>%
-      group_by(!!sym(var1)) %>%
-      summarise(cld = list(multcompView::multcompLetters(setNames(p.adj, paste(group1, group2, sep = "-")), 
-                                                         Letters = letters)$Letters),
-                .groups = 'drop') %>%
-      unnest_longer(cld) %>%
-      mutate(!!var2 := names(cld))
+    cld_table_parametric <- generate_cld_parametric(tukey_results, var1, var2)
     
     # Plotting
     df2 <- merge(my_summary, cld_table_parametric, by.x = c(var2, var1), by.y = c(var2, var1))
@@ -411,9 +456,7 @@ server <- function(input, output, session) {
       ggplot(aes(x = !!sym(var2), y = !!sym(MEASURE_COL), fill = !!sym(var2))) +
       geom_col(color = line_color(), width = 0.6, position = position_dodge2(padding = 0.05)) +
       scale_fill_manual(values = rep(fill_color(), length(unique(df2[[var2]])))) +
-      scale_y_continuous(
-        expand = expansion(mult = c(0, 0.1)), 
-        breaks = seq(0, 1, by = 0.2))  +
+      scale_y_continuous(expand = expansion(mult = c(0, 0.05)))+
       geom_quasirandom(data = result_df$data, 
                        aes(x = !!sym(var2), y = !!sym(MEASURE_COL)), 
                        color = point_color(), 
@@ -434,14 +477,14 @@ server <- function(input, output, session) {
         strip.background = element_blank(),
         strip.placement = "outside",
         strip.text = element_text(face = "plain", size = 10, color = "black", hjust = 0.5)) +
-      facet_wrap(as.formula(paste("~", var1)), nrow = 1) +
-      labs(x = "Treatment", y = "Median Value")
+      facet_wrap(as.formula(paste("~", var1)), nrow = 1, scales = "free_y") +
+      labs(x = var1, y = MEASURE_COL)
     
     output$plot_result <- renderPlot({
       print(p)
     })
     
-    ggsave("plot_para.svg", width = 8, height = 6)
+    #ggsave("plot_para.svg", width = 8, height = 6)
     
     # Download all the tables as a ZIP file for parametric data
     output$download_parametric <- downloadHandler(
@@ -493,15 +536,9 @@ server <- function(input, output, session) {
       pval_dunn <- test_dunn(result_df$data, var1, var2, MEASURE_COL)
       
       # CLD letters for non-parametric test
-      cld_table_nonparametric <- pval_dunn %>%
-        group_by(!!sym(var1)) %>%
-        summarise(
-          cld = list(multcompView::multcompLetters(setNames(p.adj, paste(group1, group2, sep = "-")), 
-                                                   Letters = letters)$Letters),
-          .groups = 'drop') %>%
-        unnest_longer(cld) %>%
-        mutate(!!var2 := names(cld))
       
+      cld_table_nonparametric <- generate_cld_nonparametric(pval_dunn, var1, var2) 
+     
       # Plotting
       df2 <- merge(conf_int, cld_table_nonparametric, by.x = c(var2, var1), by.y = c(var2, var1))
              # Variable as factor
@@ -514,8 +551,7 @@ server <- function(input, output, session) {
         ggplot(aes(x = !!sym(var2), y = Median, fill = !!sym(var2))) +
         geom_col(color = line_color(), width = 0.6, position = position_dodge2(padding = 0.05)) +
         scale_fill_manual(values = rep(fill_color(), length(unique(df2[[var2]])))) +
-        scale_y_continuous(expand = expansion(mult = c(0, 0.1)), 
-                           breaks = seq(0, 1, by = 0.2) ) +
+        scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
         geom_quasirandom(data = result_df$data, 
                          aes(x = !!sym(var2), y = !!sym(MEASURE_COL)), 
                          color = point_color(), width = 0.3, alpha = 0.6) +
@@ -536,13 +572,13 @@ server <- function(input, output, session) {
           strip.placement = "outside",
           strip.text = element_text(face = "plain", size = 10, color = "black", hjust = 0.5)) +
         facet_wrap(as.formula(paste("~", var1)), nrow = 1, scales = "free_y") +
-        labs(x = "Treatment", y = "Median Value")
+        labs(x = var1, y = MEASURE_COL)
       
       output$plot_result <- renderPlot({
         print(p)
       })
       
-      ggsave("plot_nonpara.svg", width = 8, height = 6)
+      #ggsave("plot_nonpara.svg", width = 8, height = 6)
       
     } else {                                                             # If the data are not significantly different
       print("Data are not significantly different, the Dunn test was not performed.")
@@ -573,6 +609,18 @@ server <- function(input, output, session) {
                   compression_level = 9)
       }
     )
+    
+    # Download handler for saving the plot
+    output$save_plot <- downloadHandler(
+      filename = function() {
+        paste("plot_", Sys.Date(), ".", input$file_format, sep = "")
+      },
+      content = function(file) {
+        ggsave(file, plot = last_plot(), device = input$file_format, width = 8, height = 6)
+      }
+    )
+    
+    
   })
   
   observeEvent(input$start_analysis, {
