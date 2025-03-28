@@ -188,7 +188,7 @@ server <- function(input, output, session) {
       files <- head(files, 5)
     }
     
-    data.frame(Fichier = basename(files))
+    data.frame(Files = basename(files))
   })
   
   process_data_files <- function(pattern, areas, var1, var2, var3, dirpath) {   # Define the function to process the data files
