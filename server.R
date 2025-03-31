@@ -93,22 +93,39 @@ server <- function(input, output, session) {
     input$column
   })
   
-  # Display the order of the lines
-  output$var2_order_ui <- renderUI({                                             
+  # Reactive expressions for faceting and x-axis variables
+  facet_var <- reactive({
+    if (input$facet_var == "var1") {
+      return(input$var1)
+    } else {
+      return(input$var2)
+    }
+  })
+  
+  x_var <- reactive({
+    if (input$facet_var == "var1") {
+      return(input$var2)
+    } else {
+      return(input$var1)
+    }
+  })
+  
+  
+  # Update the order of lines and facets based on selected faceting variable
+  output$var2_order_ui <- renderUI({
     req(result_df$data)
     rank_list(
-      text = "Order of lines (VAR2)",
-      labels = unique(result_df$data[[input$var2]]),
+      text = paste("Order of", x_var()),
+      labels = unique(result_df$data[[x_var()]]),
       input_id = "var2_order"
     )
   })
   
-  # Display the order of the facets
   output$var1_order_ui <- renderUI({
     req(result_df$data)
     rank_list(
-      text = "Order of facets (VAR1)",
-      labels = unique(result_df$data[[input$var1]]),
+      text = paste("Order of", facet_var()),
+      labels = unique(result_df$data[[facet_var()]]),
       input_id = "var1_order"
     )
   })
@@ -133,8 +150,8 @@ server <- function(input, output, session) {
   analysis_result <- eventReactive(input$start_analysis, { 
     req(result_df$data, VALUE())
     
-    var1 <- input$var1
-    var2 <- input$var2
+    var1 <- facet_var()
+    var2 <- x_var()
     MEASURE_COL <- VALUE() 
     
     # Convert variables to factors

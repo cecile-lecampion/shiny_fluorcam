@@ -30,6 +30,8 @@ ui <- fluidPage(
         style = "font-size: 120%; margin-top: 20px; color: blue;",
         tags$strong("2- Graph and statistical analysis parameters :") # Add a paragraph with a strong text
       ),
+      uiOutput("columnSelect"),                                            # Display the column selection
+      selectInput("facet_var", "Select the variable to facet by", choices = c("var1", "var2")),
       tags$p(tags$strong("Define order of the lines and of the facets : \n"), 
              "Drag the lines to change the order.",
              uiOutput("var2_order_ui"), 
@@ -38,9 +40,10 @@ ui <- fluidPage(
       colourInput("line_color", "Line color", value = "darkgrey"),         # Define the color of the lines
       colourInput("fill_color", "Fill color", value = "ivory1"),           # Define the color of the fill
       colourInput("point_color", "Point color", value = "darkgreen"),      # Define the color of the points
-      uiOutput("columnSelect"),                                            # Display the column selection
       tags$hr(),                                                          # Add a horizontal line
       actionButton("start_analysis", "Start Analysis"),                    # Button to start the analysis
+      tags$hr(),                                                          # Add a horizontal line
+      tags$p(tags$strong("Dowload statistic test table :")), 
       downloadButton("download_parametric", "Download All Analysis Results for parametric data"), # Button to download the results for parametric data
       downloadButton("download_non_parametric", "Download All Analysis Results for non-parametric data"), # Button to download the results for non-parametric data
       
