@@ -68,14 +68,30 @@ test_dunn <- function(df_data, var1, var2, MEASURE_COL) {
   return(pval)
 }
 
+# Function to extract the "area" from the file header
+extract_area_from_header <- function(file_name) {
+  lines <- readLines(file_name, n = 5) # Adjust n if the header is longer
+  area_line <- grep("Area:", lines, value = TRUE)
+  if (length(area_line) > 0) {
+    gsub(".*Area:\\s*", "", area_line)
+  } else {
+    return(NA)
+  }
+}
+
 # Function to process data files
 #========================================================================================================================================
 
 process_data_files <- function(pattern, areas, var1, var2, var3, dirpath) {
-  areas <- unlist(strsplit(areas, ","))
+  files <- list.files(path = dirpath, pattern = pattern, full.names = TRUE)
+  print(paste("Files found:", files))
   
-  remove_first_two_lines <- function(file_name) {
+  # Extract area from headers
+  areas <- sapply(files, extract_area_from_header)
+  
+  remove_first_two_lines <- function(file_name, area) {
     data <- read.table(file_name, skip = 2, sep = "\t", header = TRUE)
+    data$Area <- areas # Add the extracted area
     return(data)
   }
   
@@ -94,10 +110,9 @@ process_data_files <- function(pattern, areas, var1, var2, var3, dirpath) {
     return(df)
   }
   
-  files <- list.files(path = dirpath, pattern = pattern, full.names = TRUE)
-  print(paste("Files found:", files))
   
-  Liste <- lapply(files, remove_first_two_lines)
+  
+  Liste <- lapply(files, remove_first_two_lines, areas)
   names(Liste) <- tools::file_path_sans_ext(basename(files))
   
   Liste <- lapply(Liste, data.table::transpose, make.names = "X")
@@ -110,7 +125,7 @@ process_data_files <- function(pattern, areas, var1, var2, var3, dirpath) {
   Liste <- lapply(Liste, divide_name)
   
   df <- do.call(rbind, Liste)
-  df <- cbind(Area = rep(areas, length.out = nrow(df)), df)
+  #df <- cbind(Area = rep(areas, length.out = nrow(df)), df)
   
   return(df)
 }

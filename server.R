@@ -39,7 +39,7 @@ server <- function(input, output, session) {
   
   observeEvent(input$load, {                                           # Observe the event to load the data
     pattern <- input$pattern                                           # Define the pattern
-    areas <- input$areas                                               # Define the areas
+    areas <- ""                                              # Define the areas
     var1 <- input$var1                                                 # Define the name of VAR1
     var2 <- input$var2                                                 # Define the name of VAR2
     var3 <- input$var3                                                 # Define the name of VAR3
@@ -48,7 +48,7 @@ server <- function(input, output, session) {
     tryCatch({
       result_df$data <- process_data_files(
         pattern = pattern, 
-        areas = areas, 
+        areas = "", 
         var1 = var1, 
         var2 = var2, 
         var3 = var3, 
