@@ -86,15 +86,27 @@ process_data_files <- function(pattern, areas, var1, var2, var3, dirpath) {
   files <- list.files(path = dirpath, pattern = pattern, full.names = TRUE)
   print(paste("Files found:", files))
   
-  # Extract area from headers
-  areas <- sapply(files, extract_area_from_header)
-  
   remove_first_two_lines <- function(file_name, area) {
-    data <- read.table(file_name, skip = 2, sep = "\t", header = TRUE)
-    data$Area <- areas # Add the extracted area
+    # Lire toutes les lignes du fichier
+    lines <- readLines(file_name)
+    # Retirer les lignes vides 
+    lines <- lines[lines != ""]
+    # Retirer les deux premières lignes
+    if(length(lines) > 2){
+      lines <- lines[-c(1,2)]
+    } else {
+      stop("Le fichier ne contient pas assez de lignes.")
+    }
+    data <- read.table(text = lines, sep = "\t", header = TRUE)
     return(data)
   }
   
+  
+  # # Extract area from headers
+  # areas <- sapply(files, extract_area_from_header)
+  # data$Area <- areas # Add the extracted area
+  
+  # Function to compute Fv/Fm
   compute_Fv_Fm <- function(df) {
     df$Fv_Fm <- df$Fv / df$Fm
     return(df)

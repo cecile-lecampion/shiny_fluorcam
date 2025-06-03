@@ -1,6 +1,7 @@
 ########################################################################################################################################
 # Define the UI
 ########################################################################################################################################
+source("global.R",  local = TRUE) # Load the global variables and packages
 
 ui <- fluidPage(
   titlePanel("Fluorcam data analysis tool box"),    # Title of the application
@@ -15,7 +16,7 @@ ui <- fluidPage(
       verbatimTextOutput("dirpath"),                                    # Display the selected directory
       textInput("pattern", "Select files pattern", value = ".TXT"),     # Define the pattern of the files to load
       actionButton("show_all", "Show Files : All/Short list"),          # Button to show all files or only the first 5
-      textInput("areas", "Define names of areas", value = "Area 1,Area 2,Area 3,Area 4"), # Define the names of the areas
+      #textInput("areas", "Define names of areas", value = "Area 1,Area 2,Area 3,Area 4"), # Define the names of the areas
       tags$hr(),                                                        # Add a horizontal line
       tags$p(tags$strong("Collect informations about sample in file name :"),             # Add a paragraph with a strong text
              tags$br(),
@@ -30,7 +31,11 @@ ui <- fluidPage(
         style = "font-size: 120%; margin-top: 20px; color: blue;",
         tags$strong("2- Graph and statistical analysis parameters :") # Add a paragraph with a strong text
       ),
+      selectInput("graph_type", "Select the type of graph", 
+                  choices = c("Bar plot", "Curve")), # Define the type of graph
+      uiOutput("rootSelect"),                                   # Display the root selection
       uiOutput("columnSelect"),                                            # Display the column selection
+      uiOutput("editParamsBtn"), # bouton affiché seulement pour Curve
       selectInput("facet_var", "Select the variable to facet by", choices = c("var1", "var2")),
       tags$p(tags$strong("Define order of the lines and of the facets : \n"), 
              "Drag the lines to change the order.",

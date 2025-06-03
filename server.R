@@ -2,6 +2,7 @@
 # Define the server
 ########################################################################################################################################
 # server.R
+source("global.R",  local = TRUE) # Load the global variables and packages
 source("helpers.R", local = TRUE) # Load the helper functions
 
 
@@ -81,12 +82,70 @@ server <- function(input, output, session) {
     })
   })
   
-  # Display the column selection
-  output$columnSelect <- renderUI({                                             
+  
+  # 1. Sélection de la racine commune (uniquement pour "Curve")
+  output$rootSelect <- renderUI({
     req(result_df$data)
-    selectInput("column", "Select the column containing the parameter to analyse", 
-                choices = colnames(result_df$data))
+    req(input$graph_type == "Curve")
+    all_cols <- colnames(result_df$data)
+    # Extraire les racines des colonnes de type "xxx_Ln" ou "xxx_Dn"
+    roots <- unique(sub("(_L[0-9]+|_D[0-9]+)$", "", all_cols[grepl("(_L[0-9]+|_D[0-9]+)$", all_cols)]))
+    selectInput("root", "Select the parameter root", choices = roots)
   })
+  
+  # 2. Sélection des colonnes selon la racine choisie
+  output$columnSelect <- renderUI({
+    req(result_df$data)
+    if (input$graph_type == "Curve") {
+      req(input$root)
+      all_cols <- colnames(result_df$data)
+      pattern <- paste0("^", input$root, "(_L[0-9]+|_D[0-9]+)$")
+      choices <- all_cols[grepl(pattern, all_cols)]
+      selectInput("column", "Select parameters to analyse", choices = choices, multiple = TRUE)
+    } else {
+      selectInput("column", "Select parameter to analyse", choices = colnames(result_df$data))
+    }
+  })
+  
+  # 3. Bouton pour ouvrir le modal (affiché seulement si Curve et colonnes sélectionnées)
+  output$editParamsBtn <- renderUI({
+    if (input$graph_type == "Curve" && !is.null(input$column) && length(input$column) > 0) {
+      actionButton("edit_params", "Add L1-L9, D1, D2 vlues and unit")
+    }
+  })
+  
+  # 4. Modal pour saisir valeurs et unité (uniquement pour Curve)
+  observeEvent(input$edit_params, {
+    req(input$column)
+    params <- input$column
+    
+    unit_input <- textInput("unit_common", "Unit", value = "")
+    value_inputs <- lapply(params, function(param) {
+      numericInput(paste0("value_", param), paste("Value", param), value = NA)
+    })
+    
+    showModal(modalDialog(
+      title = "Add L1-L9, D1, D2 vlues and unit",
+      unit_input,
+      do.call(tagList, value_inputs),
+      footer = tagList(
+        modalButton("Cancel"),
+        actionButton("validate_params", "Validate")
+      )
+    ))
+  })
+  # 5. Traitement des valeurs après validation
+  # Initialisation
+  user_params <- reactiveValues(times = NULL, unit = NULL)
+  
+  # À la validation du modal
+  observeEvent(input$validate_params, {
+    params <- input$column
+    user_params$times <- sapply(params, function(param) input[[paste0("value_", param)]])
+    user_params$unit  <- input$unit_common
+    removeModal()
+  })
+
   
   VALUE <- reactive({                                                  # Define the reactive value for the selected value
     req(input$column)

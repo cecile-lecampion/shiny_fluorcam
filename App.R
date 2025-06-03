@@ -22,20 +22,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# Load the necessary packages
 
-required_packages <- c("shiny", "shinyFiles", "fs", "tidyr", "data.table", "sortable", "colourpicker", 
-                       "ggbeeswarm", "RColorBrewer", "rstatix", "rcompanion", "forcats", "Rmisc", 
-                       "plyr", "multcompView", "ggplot2", "dplyr", "zip")
-
-for(pkg in required_packages){
-  if(!require(pkg, character.only = TRUE)){
-    install.packages(pkg, dependencies = TRUE)
-    library(pkg, character.only = TRUE)
-  }
-}
 
 # Source external scripts
+source("global.R")
 source("helpers.R")
 source("ui.R")
 source("server.R")
