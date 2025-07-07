@@ -153,21 +153,23 @@ analyse_barplot <- function(
     var1_order = NULL, var2_order = NULL,
     fill_color = "ivory1", line_color = "darkgrey", point_color = "darkgreen"
 ) {
-  library(dplyr)
-  library(ggplot2)
-  library(Rmisc)
-  library(plyr)
-  library(ggbeeswarm) # For geom_quasirandom
+  # library(dplyr)
+  # library(ggplot2)
+  # library(Rmisc)
+  # library(plyr)
+  # library(ggbeeswarm) # For geom_quasirandom
   # Optionally add library(rstatix) and others as needed
   
+  
+  
   # Convert variables to factors and apply order if provided
-  data[[var1]] <- factor(data[[var1]], levels = var1_order)
-  data[[var2]] <- factor(data[[var2]], levels = var2_order)
+  data$var1 <- factor(data$var1, levels = var1_order)
+  data$var2 <- factor(data$var2, levels = var2_order)
   
   # Shapiro test
   shapiro_df <- data %>%
-    group_by(.data[[var2]], .data[[var1]]) %>%
-    rstatix::shapiro_test(.data[[measure_col]])
+    group_by(!!sym(var2), !!sym(var1)) %>%
+    rstatix::shapiro_test(!!sym(MEASURE_COL))
   
   flag_normal <- check_normality(shapiro_df)
   
@@ -176,16 +178,16 @@ analyse_barplot <- function(
     
     # ANOVA & Tukey
     anova_result <- data %>%
-      group_by(.data[[var1]]) %>%
+      group_by(var1) %>%
       rstatix::anova_test(reformulate(var2, measure_col))
     tukey_results <- data %>%
-      group_by(.data[[var1]]) %>%
-      rstatix::tukey_hsd(as.formula(paste(measure_col, "~", var2)))
+      group_by(!!sym(var1)) %>% 
+      rstatix::tukey_hsd(as.formula(paste(!!sym(measure_col), "~", !!sym(var2))))
     cld_table_parametric <- generate_cld_parametric(tukey_results, var1, var2)
     
     df2 <- merge(my_summary, cld_table_parametric, by.x = c(var2, var1), by.y = c(var2, var1))
-    df2[[var1]] <- factor(df2[[var1]], levels = var1_order)
-    df2[[var2]] <- factor(df2[[var2]], levels = var2_order)
+    df2$var1 <- factor(df2$var1, levels = var1_order)
+    df2$var2 <- factor(df2$var2, levels = var2_order)
     
     p <- df2 %>%
       mutate(!!sym(var1) := as.factor(!!sym(var1)),

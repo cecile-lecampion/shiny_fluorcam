@@ -41,10 +41,7 @@ ui <- fluidPage(
              "Drag the lines to change the order.",
              uiOutput("var2_order_ui"), 
              uiOutput("var1_order_ui")),
-      # tags$p(tags$strong("Select colors for your graph :")), 
-      # colourInput("line_color", "Line color", value = "darkgrey"),         # Define the color of the lines
-      # colourInput("fill_color", "Fill color", value = "ivory1"),           # Define the color of the fill
-      # colourInput("point_color", "Point color", value = "darkgreen"),      # Define the color of the points
+     
      # Define the dynamic color inputs
       tags$p(tags$strong("Select colors for your graph:")),
       uiOutput("dynamic_color_inputs"),
