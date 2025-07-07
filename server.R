@@ -125,7 +125,7 @@ server <- function(input, output, session) {
     })
     
     showModal(modalDialog(
-      title = "Add L1-L9, D1, D2 vlues and unit",
+      title = "Add L1-L9, D1, D2 values and unit",
       unit_input,
       do.call(tagList, value_inputs),
       footer = tagList(
@@ -190,21 +190,41 @@ server <- function(input, output, session) {
   })
   
   # color selection
-  line_color <- reactive({ 
-    req(input$line_color)
-    input$line_color
+  # line_color <- reactive({ 
+  #   req(input$line_color)
+  #   input$line_color
+  # })
+  # 
+  # fill_color <- reactive({
+  #   req(input$fill_color)
+  #   input$fill_color
+  # })
+  # 
+  # point_color <- reactive({
+  #   req(input$point_color)
+  #   input$point_color
+  # })
+  output$dynamic_color_inputs <- renderUI({
+    if (input$graph_type == "Bar plot") {
+      tagList(
+        colourInput("line_color", "Line color", value = "darkgrey"),
+        colourInput("fill_color", "Fill color", value = "ivory1"),
+        colourInput("point_color", "Point color", value = "darkgreen")
+      )
+    } else if (input$graph_type == "Curve") {
+      # Replace 'selected_lines()' with however you determine the number of lines
+      req(input$var2)  # assuming 'Line' is selected by var2
+      n_lines <- length(unique(result_df$data[[input$var2]])) # or your method
+      color_inputs <- lapply(seq_len(n_lines), function(i) {
+        colourInput(
+          inputId = paste0("curve_color_", i),
+          label = paste("Color for Line", i),
+          value = scales::hue_pal()(n_lines)[i]
+        )
+      })
+      do.call(tagList, color_inputs)
+    }
   })
-  
-  fill_color <- reactive({
-    req(input$fill_color)
-    input$fill_color
-  })
-  
-  point_color <- reactive({
-    req(input$point_color)
-    input$point_color
-  })
-  
   # Data processing and statistical analysis
   analysis_result <- eventReactive(input$start_analysis, { 
     req(result_df$data, VALUE())
