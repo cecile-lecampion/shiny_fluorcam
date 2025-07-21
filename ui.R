@@ -56,8 +56,7 @@ ui <- fluidPage(
       tags$hr(),                                                        # Add a horizontal line
       tags$p(tags$strong("Save the plot :")),
       selectInput("file_format", "Choose file format", choices = c("svg", "png", "pdf")),
-      tags$p("Your plot will be saved to download folder"),
-      shinySaveButton("save_plot", "Save Plot", "Save plot as...", filetype = list(svg = "svg", png = "png", pdf = "pdf"))
+      downloadButton("save_plot", "Save Plot")
       
     ),
     

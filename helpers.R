@@ -101,11 +101,6 @@ process_data_files <- function(pattern, areas, var1, var2, var3, dirpath) {
     return(data)
   }
   
-  
-  # # Extract area from headers
-  # areas <- sapply(files, extract_area_from_header)
-  # data$Area <- areas # Add the extracted area
-  
   # Function to compute Fv/Fm
   compute_Fv_Fm <- function(df) {
     df$Fv_Fm <- df$Fv / df$Fm
@@ -122,9 +117,7 @@ process_data_files <- function(pattern, areas, var1, var2, var3, dirpath) {
     return(df)
   }
   
-  
-  
-  Liste <- lapply(files, remove_first_two_lines, areas)
+  Liste <- lapply(files, remove_first_two_lines, area = "")
   names(Liste) <- tools::file_path_sans_ext(basename(files))
   
   Liste <- lapply(Liste, data.table::transpose, make.names = "X")
@@ -153,23 +146,40 @@ analyse_barplot <- function(
     var1_order = NULL, var2_order = NULL,
     fill_color = "ivory1", line_color = "darkgrey", point_color = "darkgreen"
 ) {
-  # library(dplyr)
-  # library(ggplot2)
-  # library(Rmisc)
-  # library(plyr)
-  # library(ggbeeswarm) # For geom_quasirandom
-  # Optionally add library(rstatix) and others as needed
-  
-  
-  
+  # Validate inputs
+  if(is.null(data) || nrow(data) == 0) {
+    stop("Data is empty or NULL")
+  }
+
+  if(!var1 %in% colnames(data)) {
+    stop(paste("Variable", var1, "not found in data"))
+  }
+
+  if(!var2 %in% colnames(data)) {
+    stop(paste("Variable", var2, "not found in data"))
+  }
+
+  if(!measure_col %in% colnames(data)) {
+    stop(paste("Measure column", measure_col, "not found in data"))
+  }
+
   # Convert variables to factors and apply order if provided
-  data$var1 <- factor(data$var1, levels = var1_order)
-  data$var2 <- factor(data$var2, levels = var2_order)
+  if(!is.null(var1_order)) {
+    data[[var1]] <- factor(data[[var1]], levels = var1_order)
+  } else {
+    data[[var1]] <- as.factor(data[[var1]])
+  }
+
+  if(!is.null(var2_order)) {
+    data[[var2]] <- factor(data[[var2]], levels = var2_order)
+  } else {
+    data[[var2]] <- as.factor(data[[var2]])
+  }
   
   # Shapiro test
   shapiro_df <- data %>%
     group_by(!!sym(var2), !!sym(var1)) %>%
-    rstatix::shapiro_test(!!sym(MEASURE_COL))
+    rstatix::shapiro_test(!!sym(measure_col))
   
   flag_normal <- check_normality(shapiro_df)
   
@@ -178,16 +188,22 @@ analyse_barplot <- function(
     
     # ANOVA & Tukey
     anova_result <- data %>%
-      group_by(var1) %>%
+      group_by(!!sym(var1)) %>%
       rstatix::anova_test(reformulate(var2, measure_col))
     tukey_results <- data %>%
       group_by(!!sym(var1)) %>% 
-      rstatix::tukey_hsd(as.formula(paste(!!sym(measure_col), "~", !!sym(var2))))
+      rstatix::tukey_hsd(as.formula(paste(measure_col, "~", var2)))
     cld_table_parametric <- generate_cld_parametric(tukey_results, var1, var2)
     
-    df2 <- merge(my_summary, cld_table_parametric, by.x = c(var2, var1), by.y = c(var2, var1))
-    df2$var1 <- factor(df2$var1, levels = var1_order)
-    df2$var2 <- factor(df2$var2, levels = var2_order)
+    df2 <- merge(my_summary, cld_table_parametric, by = c(var2, var1), all.x = TRUE)
+    
+    # Ensure factor levels are maintained
+    if(!is.null(var1_order)) {
+      df2[[var1]] <- factor(df2[[var1]], levels = var1_order)
+    }
+    if(!is.null(var2_order)) {
+      df2[[var2]] <- factor(df2[[var2]], levels = var2_order)
+    }
     
     p <- df2 %>%
       mutate(!!sym(var1) := as.factor(!!sym(var1)),
@@ -303,6 +319,20 @@ analyse_barplot <- function(
 # Function to plot curve
 #========================================================================================================================================
 analyse_curve <- function(df, col_vector) {
+  # This function needs to be adapted based on your specific data structure
+  # For now, return a simple placeholder plot
+  library(ggplot2)
+  
+  # Create a simple placeholder plot if the expected columns don't exist
+  if(!"value" %in% colnames(df)) {
+    p <- ggplot(df, aes(x = 1, y = 1)) + 
+      geom_text(aes(label = "Curve analysis needs to be configured for your data structure")) +
+      theme_minimal()
+    return(p)
+  }
+  
+  # Original function logic continues here if data structure is correct
+  # ... rest of the function
   # Determining data normality status
   shapiro_df <- df %>%
     dplyr::group_by(time, line, secondes) %>%

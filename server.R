@@ -26,13 +26,22 @@ server <- function(input, output, session) {
   
   result_df <- reactiveValues(data = NULL)
   observeEvent(input$load, {
+    req(dirpath(), input$pattern, input$var1, input$var2, input$var3)
+    
     pattern <- input$pattern
     var1 <- input$var1
     var2 <- input$var2
     var3 <- input$var3
     dir_path <- dirpath()
+    
+    # Validate inputs
+    if(is.null(dir_path) || dir_path == "") {
+      showNotification("Please select a directory first.", type = "error")
+      return()
+    }
+    
     tryCatch({
-      result_df$data <- process_data_files(
+      processed_data <- process_data_files(
         pattern = pattern, 
         areas = "", 
         var1 = var1, 
@@ -40,14 +49,26 @@ server <- function(input, output, session) {
         var3 = var3, 
         dirpath = dir_path
       )
+      
+      # Only assign if data is valid
+      if(!is.null(processed_data) && nrow(processed_data) > 0) {
+        result_df$data <- processed_data
+        showNotification("Data loaded successfully!", type = "message")
+      } else {
+        showNotification("No valid data found in the files.", type = "warning")
+        return()
+      }
+      
       output$toggle_button <- renderUI({
         req(result_df$data)
         actionButton("toggle_table", "Show/Hide Full Table")
       })
+      
       show_full_table <- reactiveValues(full = FALSE)
       observeEvent(input$toggle_table, {
         show_full_table$full <- !show_full_table$full
       })
+      
       output$processed_data <- renderTable({
         req(result_df$data)
         if (show_full_table$full) {
@@ -57,7 +78,7 @@ server <- function(input, output, session) {
         }
       })
     }, error = function(e) {
-      showNotification("Failed to load data files. Please check the inputs and try again.", type = "error")
+      showNotification(paste("Failed to load data files:", e$message), type = "error")
       print(e)
     })
   })
@@ -241,6 +262,27 @@ server <- function(input, output, session) {
     }
   })
   
+  # Download handlers for statistical results
+  output$download_parametric <- downloadHandler(
+    filename = function() {
+      paste("parametric_results_", Sys.Date(), ".csv", sep = "")
+    },
+    content = function(file) {
+      # This would need to be implemented based on your specific analysis results
+      write.csv(data.frame(message = "Parametric results not yet implemented"), file, row.names = FALSE)
+    }
+  )
+  
+  output$download_non_parametric <- downloadHandler(
+    filename = function() {
+      paste("non_parametric_results_", Sys.Date(), ".csv", sep = "")
+    },
+    content = function(file) {
+      # This would need to be implemented based on your specific analysis results
+      write.csv(data.frame(message = "Non-parametric results not yet implemented"), file, row.names = FALSE)
+    }
+  )
+
   # Download handler for saving the plot
    output$save_plot <- downloadHandler(
      filename = function() {
