@@ -25,6 +25,8 @@ server <- function(input, output, session) {
   })
   
   result_df <- reactiveValues(data = NULL)
+  user_params <- reactiveValues(times = NULL, unit = NULL, selected_params = NULL)
+  
   observeEvent(input$load, {
     req(dirpath(), input$pattern, input$var1, input$var2, input$var3)
     
@@ -136,16 +138,18 @@ server <- function(input, output, session) {
   })
   
   # 5. Traitement des valeurs après validation
-  # Initialisation
-  user_params <- reactiveValues(times = NULL, unit = NULL)
-  
-  # À la validation du modal
-  observeEvent(input$validate_params, {
-    params <- input$column
-    user_params$times <- sapply(params, function(param) input[[paste0("value_", param)]])
-    user_params$unit  <- input$unit_common
-    removeModal()
-  })
+  # Initialisation - ADD selected_params here
+  user_params <- reactiveValues(times = NULL, unit = NULL, selected_params = NULL)
+
+  # À la validation du modal - STORE the selected parameters
+observeEvent(input$validate_params, {
+  params <- input$column
+  user_params$selected_params <- params  # ADD this line
+  user_params$times <- sapply(params, function(param) input[[paste0("value_", param)]])
+  user_params$unit  <- input$unit_common
+  removeModal()
+  showNotification("Parameters validated successfully!", type = "message")  # Optional feedback
+})
   
   VALUE <- reactive({                            # Define the reactive value for the selected value
     req(input$column)
@@ -234,6 +238,7 @@ server <- function(input, output, session) {
     req(input$var1_order)
     req(input$var2_order)
     
+    
     if (input$graph_type == "Bar plot") {
       barplot_results <- analyse_barplot(
         data = result_df$data,
@@ -249,14 +254,24 @@ server <- function(input, output, session) {
       return(barplot_results$plot)  # <-- RETURN the plot object
     } else if (input$graph_type == "Curve") {
       req(input$var2)
+      req(user_params$selected_params)  # This should now work
+      req(input$column)  # Also require the column selection
+  
       n_lines <- length(unique(result_df$data[[input$var2]]))
-      curve_colors <- sapply(seq_len(n_lines), function(i) input[[paste0("curve_color_", i)]])
-      # f_analyseNPQ must take (df, col_vector) at least
-      curve_plot <- analyse_curve(
-        df = result_df$data,
-        col_vector = curve_colors
-      )
-      return(curve_plot)
+      curve_colors <- sapply(seq_len(n_lines), function(i) {
+        color_input <- input[[paste0("curve_color_", i)]]
+        if(is.null(color_input)) "#000000" else color_input
+    })
+
+  # Use the validated user parameters
+  curve_plot <- analyse_curve(
+    df = result_df$data,
+    col_vector = curve_colors,
+    user_params = reactiveValuesToList(user_params),  # Pass all user parameters
+    grouping_col = x_var(),    # Use x_var() instead of input$var2
+    facet_col = facet_var()    # Use facet_var() instead of input$var1
+  )
+  return(curve_plot)
     } else {
       return(NULL)
     }

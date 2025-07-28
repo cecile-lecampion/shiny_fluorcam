@@ -8,8 +8,8 @@
 check_normality <- function(shapiro_df) {
   # Assume normality is true initially
   flag_normal <- TRUE
-  
-  for (i in 1:nrow(shapiro_df)) {
+
+  for (i in seq_len(nrow(shapiro_df))) {
     if (shapiro_df$p[i] <= 0.05) {
       # If any data group does not follow a normal law, stop and flag as non-normal
       flag_normal <- FALSE
@@ -30,7 +30,7 @@ generate_cld_parametric <- function(tukey_df, var1_col, var2_col) {
     group_by(!!sym(var1_col)) %>%
     summarise(
       cld = list(multcompView::multcompLetters(
-        setNames(p.adj, paste(group1, group2, sep = "-")),
+        setNames(p.adj, paste(group1, group2, sep = "-")), # nolint: object_usage_linter.
         Letters = letters
       )$Letters)
     ) %>%
@@ -318,67 +318,117 @@ analyse_barplot <- function(
 
 # Function to plot curve
 #========================================================================================================================================
-analyse_curve <- function(df, col_vector) {
-  # This function needs to be adapted based on your specific data structure
-  # For now, return a simple placeholder plot
-  library(ggplot2)
+analyse_curve <- function(df, col_vector, 
+                          user_params = NULL,
+                          grouping_col = NULL, 
+                          facet_col = NULL) {
   
-  # Create a simple placeholder plot if the expected columns don't exist
-  if(!"value" %in% colnames(df)) {
-    p <- ggplot(df, aes(x = 1, y = 1)) + 
-      geom_text(aes(label = "Curve analysis needs to be configured for your data structure")) +
-      theme_minimal()
+  library(ggplot2)
+  library(dplyr)
+  library(tidyr)
+  
+  # Validate that user parameters are provided
+  if(is.null(user_params) || is.null(user_params$selected_params)) {
+    p <- ggplot() + 
+      geom_text(aes(x = 1, y = 1, label = "Please validate parameters using 'AddL1-L9, D1, D1, values and unit' button first.")) +
+      theme_minimal() +
+      theme(axis.title = element_blank(), axis.text = element_blank(), axis.ticks = element_blank())
     return(p)
   }
   
-  # Original function logic continues here if data structure is correct
-  # ... rest of the function
-  # Determining data normality status
-  shapiro_df <- df %>%
-    dplyr::group_by(time, line, secondes) %>%
-    summarise(
-      statistic = shapiro.test(value)$statistic,
-      p.value = shapiro.test(value)$p.value,
-      .groups = "drop"
-    )
+  # Extract validated parameters
+  parameter_cols <- user_params$selected_params
+  time_values <- user_params$times
+  unit <- user_params$unit
   
-  flag_normal <- check_normality(shapiro_df)
-  
-  if (flag_normal) {
-    # Summary
-    my_summary <- Rmisc::summarySE(df, measurevar = "value", groupvars = c("time", "line", "secondes"))
-    
-    p <- my_summary %>%
-      ggplot(aes(x = secondes, y = value, group = line)) +
-      geom_ribbon(aes(ymin = value - ci, ymax = value + ci, fill = line), alpha = 0.3, linetype = 0) +
-      scale_fill_manual(values = col_vector) +
-      geom_point(aes(color = line)) +
-      geom_line(aes(color = line), size = 1) +
-      scale_colour_manual(values = col_vector) +
-      facet_wrap(~time) +
-      theme_classic() +
-      theme(legend.title = element_blank())
-  } else {
-    conf_int <- groupwiseMedian(
-      data = df,
-      var = "value",
-      group = c("time", "line", "secondes"),
-      conf = 0.95,
-      R = 5000,
-      percentile = TRUE,
-      bca = FALSE,
-      digits = 3
-    )
-    p <- conf_int %>%
-      ggplot(aes(x = secondes, y = Median, group = line)) +
-      geom_ribbon(aes(ymin = Percentile.lower, ymax = Percentile.upper, fill = line), alpha = 0.3, linetype = 0) +
-      scale_fill_manual(values = col_vector) +
-      geom_point(aes(color = line)) +
-      geom_line(aes(color = line), size = 1) +
-      scale_colour_manual(values = col_vector) +
-      facet_wrap(~time) +
-      theme_classic() +
-      theme(legend.title = element_blank())
+  # Check if the selected parameters exist in the dataframe
+  missing_params <- setdiff(parameter_cols, colnames(df))
+  if(length(missing_params) > 0) {
+    p <- ggplot() + 
+      geom_text(aes(x = 1, y = 1, label = paste("Missing parameters in data:", paste(missing_params, collapse = ", ")))) +
+      theme_minimal() +
+      theme(axis.title = element_blank(), axis.text = element_blank(), axis.ticks = element_blank())
+    return(p)
   }
+  
+  # Use provided grouping columns or detect them
+  if(is.null(grouping_col) || is.null(facet_col)) {
+    var_cols <- colnames(df)[!colnames(df) %in% parameter_cols]
+    if(length(var_cols) >= 2) {
+      grouping_col <- var_cols[2]  # Typically "Line" 
+      facet_col <- var_cols[1]     # Typically "Day"
+    } else {
+      stop("Cannot determine grouping variables. Please specify grouping_col and facet_col.")
+    }
+  }
+  
+  # Reshape data to long format for plotting
+  df_long <- df %>%
+    select(all_of(c(grouping_col, facet_col, parameter_cols))) %>%
+    pivot_longer(cols = all_of(parameter_cols), 
+                 names_to = "parameter", 
+                 values_to = "value") %>%
+    filter(!is.na(value))
+  
+  # Add time values from user parameters
+  if(!is.null(time_values) && length(time_values) == length(parameter_cols)) {
+    time_mapping <- setNames(time_values, parameter_cols)
+    df_long$time <- time_mapping[df_long$parameter]
+  } else {
+    # Fallback: extract time from parameter names
+    df_long$time <- as.numeric(gsub(".*_([LD])([0-9]+)$", "\\2", df_long$parameter))
+  }
+  
+  # Remove rows where time couldn't be assigned
+  df_long <- df_long %>% filter(!is.na(time))
+  
+  # Convert factors
+  df_long[[grouping_col]] <- as.factor(df_long[[grouping_col]])
+  df_long[[facet_col]] <- as.factor(df_long[[facet_col]])
+  
+  # Create color mapping
+  unique_groups <- unique(df_long[[grouping_col]])
+  if(length(col_vector) >= length(unique_groups)) {
+    color_mapping <- setNames(col_vector[1:length(unique_groups)], unique_groups)
+  } else {
+    color_mapping <- setNames(rainbow(length(unique_groups)), unique_groups)
+  }
+  
+  # Calculate summary statistics for smooth curves
+  summary_data <- df_long %>%
+    group_by(!!sym(facet_col), !!sym(grouping_col), time) %>%
+    dplyr::summarise(
+      mean_value = mean(value, na.rm = TRUE),
+      median_value = median(value, na.rm = TRUE),
+      sd_value = sd(value, na.rm = TRUE),
+      count = n(),  # This is the correct way to use n()
+      .groups = "drop"
+    ) %>%
+    dplyr::mutate(
+      se = sd_value / sqrt(count)  # Calculate SE after the summarise
+    )
+  
+  # Create the plot
+  p <- ggplot(summary_data, aes(x = time, y = median_value, color = !!sym(grouping_col))) +
+    geom_point(size = 2, alpha = 0.7) +
+    geom_line(size = 1) +
+    geom_errorbar(aes(ymin = median_value - se, ymax = median_value + se), 
+                  width = 0.1, alpha = 0.5) +
+    scale_color_manual(values = color_mapping) +
+    facet_wrap(as.formula(paste("~", facet_col))) +
+    theme_classic() +
+    theme(
+      legend.title = element_blank(),
+      axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+      strip.background = element_blank(),
+      strip.placement = "outside",
+      strip.text = element_text(face = "plain", size = 10, color = "black", hjust = 0.5)
+    ) +
+    labs(
+      x = if(!is.null(unit)) paste("Time (", unit, ")") else "Time",
+      y = "Fv/Fm",
+      title = paste("Time Course Analysis -", length(parameter_cols), "time points")
+    )
+  
   return(p)
 }
