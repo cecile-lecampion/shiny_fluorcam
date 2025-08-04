@@ -3,7 +3,7 @@
 required_packages <- c("shiny", "shinyFiles", "fs", "tidyr", "data.table", "sortable", "colourpicker", 
                        "ggbeeswarm", "RColorBrewer", "rstatix", "rcompanion", "forcats", "Rmisc", 
                        "plyr", "multcompView", "ggplot2", "dplyr", "zip", "shinydashboard", "DT",  "readr", 
-                       "ggpubr", "sortable", "shinyWidgets", "shinycssloaders","htmltools")
+                       "ggpubr", "sortable", "shinyWidgets", "shinycssloaders","htmltools", "shinycssloaders")
 
 
 # Identifier ceux qui ne sont pas déjà installés dans ce répertoire
