@@ -1,23 +1,42 @@
 ########################################################################################################################################
 # Define the UI
 ########################################################################################################################################
+# STRATEGY: Create a comprehensive Shiny dashboard for FluorCam data analysis
+# - Uses dashboardPage layout for professional appearance
+# - Implements collapsible accordion panels for organized workflow
+# - Provides step-by-step guided analysis process
+# - Supports both bar plot and curve analysis workflows
+
 source("global.R",  local = TRUE) # Load the global variables and packages
 
 ui <- dashboardPage(
+  # HEADER: Simple title bar for the application
   dashboardHeader(title = "FluorCam Data Analysis Toolbox"),
+  
+  # SIDEBAR: Empty because we use sidebarLayout inside dashboardBody
+  # STRATEGY: This allows more flexibility in layout while keeping dashboard styling
   dashboardSidebar(
     # Empty sidebar since you're using sidebarLayout inside dashboardBody
   ),
+  
+  # MAIN DASHBOARD BODY
   dashboardBody(
-    # Move the CSS inside dashboardBody
+    # CSS STYLING SECTION
+    # STRATEGY: Custom CSS to improve visual appearance and user experience
+    # - Professional color scheme and spacing
+    # - Hover effects for better interactivity
+    # - Responsive design elements
+    # - Fixed plot container sizing issues
     tags$head(
       tags$style(HTML("
         /* Dashboard background improvements */
+        /* STRATEGY: Light background for better readability */
         .content-wrapper, .right-side {
           background-color: #f8f9fa;
         }
         
         /* Improve info boxes in Analysis Results */
+        /* STRATEGY: Card-like design for better information hierarchy */
         .info-box {
           background: white;
           padding: 20px;
@@ -28,12 +47,14 @@ ui <- dashboardPage(
         }
         
         /* Button improvements */
+        /* STRATEGY: Consistent button spacing and rounded corners */
         .btn-block {
           margin-bottom: 15px;
           border-radius: 5px;
         }
         
         /* Panel heading improvements */
+        /* STRATEGY: Interactive hover effects to indicate clickable accordion panels */
         .panel-heading {
           cursor: pointer;
           transition: background-color 0.3s ease;
@@ -43,6 +64,7 @@ ui <- dashboardPage(
         }
         
         /* Alert boxes improvements */
+        /* STRATEGY: Modern alert design without harsh borders */
         .alert {
           border-radius: 6px;
           border: none;
@@ -50,6 +72,7 @@ ui <- dashboardPage(
         }
         
         /* Tab improvements */
+        /* STRATEGY: Branded tab design matching overall color scheme */
         .nav-tabs {
           border-bottom: 2px solid #3c8dbc;
         }
@@ -60,6 +83,7 @@ ui <- dashboardPage(
         }
         
         /* Table improvements */
+        /* STRATEGY: Clean table design with subtle shadows */
         .table {
           background: white;
           border-radius: 5px;
@@ -68,6 +92,8 @@ ui <- dashboardPage(
         }
         
         /* FIXED: Plot container improvements */
+        /* STRATEGY: Solve plot overflow issues and ensure responsive design */
+        /* PROBLEM SOLVED: Plots were extending beyond container boundaries */
         #plot_result {
           background: white;
           padding: 20px;
@@ -95,6 +121,7 @@ ui <- dashboardPage(
         }
         
         /* Input field improvements */
+        /* STRATEGY: Modern input styling with focus effects */
         .form-control {
           border-radius: 4px;
           border: 1px solid #ddd;
@@ -107,33 +134,60 @@ ui <- dashboardPage(
       "))
     ),
     
+    # MAIN LAYOUT STRUCTURE
+    # STRATEGY: Use fluidPage with sidebarLayout for responsive design
+    # - Sidebar for controls and parameters
+    # - Main panel for results and data display
     fluidPage(
       sidebarLayout(
+        
+        # ===========================================
+        # SIDEBAR PANEL: ALL USER CONTROLS
+        # ===========================================
+        # STRATEGY: Organized as step-by-step workflow using accordion panels
+        # - Guides users through logical analysis sequence
+        # - Collapsible panels reduce visual clutter
+        # - Each section builds on the previous one
         sidebarPanel(
-          # Wrap all panels in an accordion container
+          
+          # ACCORDION CONTAINER
+          # STRATEGY: Bootstrap accordion for organized workflow
+          # BENEFIT: Users can focus on one step at a time
           div(class = "panel-group", id = "accordion",
             
-            # Section 1: File Name Configuration
+            # ===========================================
+            # SECTION 1: FILE NAME CONFIGURATION
+            # ===========================================
+            # PURPOSE: Define the naming pattern for data files
+            # STRATEGY: Set up variable mapping before loading data
+            # WHY FIRST: File naming pattern must be understood before data loading
             div(class = "panel panel-primary",
                 div(class = "panel-heading",
                     h4(class = "panel-title",
                        tags$a(`data-toggle` = "collapse",
-                              `data-parent` = "#accordion",  # Add this for accordion behavior
+                              `data-parent` = "#accordion",  # Accordion behavior
                               href = "#collapse1",
                               icon("tag"), " 1. File Name Configuration"))
                 ),
+                # START EXPANDED: This is the first step users need to complete
                 div(id = "collapse1", class = "panel-collapse collapse in",
                     div(class = "panel-body",
-                        # Enhanced naming pattern visibility
+                        
+                        # CLEAR INSTRUCTIONS
+                        # STRATEGY: Prominent alert box explains required format
+                        # BENEFIT: Reduces user confusion about file naming
                         div(class = "alert alert-info", style = "margin-bottom: 15px;",
                             icon("info-circle"),
                             strong(" Required File Naming Pattern:"),
-                            br(), br(),  # Double line break for more space
+                            br(), br(),  # Extra spacing for readability
                             tags$code("VAR1_VAR2_VAR3.TXT", style = "font-size: 14px; background-color: #f8f9fa; padding: 15px;"),
-                            br(), br(),  # Double line break for more space
+                            br(), br(),
                             em("Example: Day1_LineA_Plant001.TXT")
                         ),
-                        # Variable mapping inputs
+                        
+                        # VARIABLE MAPPING INPUTS
+                        # STRATEGY: Three-column layout for clear variable definition
+                        # PURPOSE: Map generic VAR1/VAR2/VAR3 to actual experiment variables
                         helpText("Define what each variable represents in your file names:"),
                         fluidRow(
                           column(4, 
@@ -155,7 +209,10 @@ ui <- dashboardPage(
                                  )
                           )
                         ),
-                        # Preview of expected filename
+                        
+                        # FILENAME PREVIEW
+                        # STRATEGY: Real-time preview helps users verify their setup
+                        # BENEFIT: Immediate feedback prevents file loading errors
                         div(class = "well well-sm", style = "margin-top: 15px; background-color: #f0f8ff;",
                             strong("Expected filename example: "),
                             tags$span(id = "filename_preview", style = "font-family: monospace; color: #2c3e50;",
@@ -165,30 +222,77 @@ ui <- dashboardPage(
                 )
             ),
             
-            # Section 2: Data Loading
+            # ===========================================
+            # SECTION 2: DATA LOADING
+            # ===========================================
+            # PURPOSE: Load and preview data files
+            # STRATEGY: Directory selection → file pattern → preview → load
+            # WHY SECOND: Can only load data after understanding file naming
             div(class = "panel panel-primary",
                 div(class = "panel-heading",
                     h4(class = "panel-title",
                        tags$a(`data-toggle` = "collapse", 
-                              `data-parent` = "#accordion",  # Add this for accordion behavior
+                              `data-parent` = "#accordion",
                               href = "#collapse2",
                               icon("database"), " 2. Load Data"))
                 ),
+                # COLLAPSED BY DEFAULT: Users complete Section 1 first
                 div(id = "collapse2", class = "panel-collapse collapse",
                     div(class = "panel-body",
-                        shinyDirButton("dir", "Select Directory", 
-                                       "Choose Folder", 
-                                       icon = icon("folder-open"),
-                                       class = "btn-primary btn-block"),
-                        br(),
-                        verbatimTextOutput("dirpath"),
+                        
+                        # FILE UPLOAD SECTION
+                        # STRATEGY: Direct file upload for server deployment
+                        # PURPOSE: Allow users to upload their own FluorCam files
+                        div(
+                          style = "background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;",
+                          h4(icon("upload"), "Upload FluorCam Files", 
+                             style = "color: #495057; margin-bottom: 15px;"),
+                          
+                          # FILE UPLOAD INPUT
+                          # STRATEGY: Multiple file selection with .txt filter
+                          # PURPOSE: Upload all data files at once
+                          fileInput(
+                            "uploaded_files",
+                            label = div(
+                              strong("Select FluorCam .TXT files:"),
+                              br(),
+                              span("Choose multiple files that follow the naming pattern VAR1_VAR2_VAR3.TXT", 
+                                   style = "font-size: 12px; color: #6c757d;")
+                            ),
+                            multiple = TRUE,
+                            accept = c(".txt", ".TXT"),
+                            width = "100%"
+                          ),
+                          
+                          # UPLOAD STATUS
+                          verbatimTextOutput("upload_status"),
+                          
+                          # FILE PREVIEW
+                          conditionalPanel(
+                            condition = "output.files_uploaded",
+                            div(
+                              h5("Uploaded Files:", style = "margin-top: 15px;"),
+                              tableOutput("uploaded_files_table")
+                            )
+                          )
+                        ),
+                        
+                        # FILE PATTERN INPUT
+                        # PURPOSE: Allow different file extensions (.TXT, .csv, etc.)
                         textInput("pattern", "File Pattern", 
                                   value = ".TXT",
                                   placeholder = "e.g., .TXT, .csv"),
+                        
+                        # FILE PREVIEW TOGGLE
+                        # STRATEGY: Optional file list preview before loading
+                        # BENEFIT: Users can verify correct files will be loaded
                         actionButton("show_all", "Toggle File List", 
                                      icon = icon("list"),
                                      class = "btn-info btn-sm"),
                         br(), br(),
+                        
+                        # MAIN LOAD ACTION
+                        # STRATEGY: Prominent success-colored button for final action
                         actionButton("load", "Load Data", 
                                      icon = icon("play"),
                                      class = "btn-success btn-block")
@@ -196,52 +300,94 @@ ui <- dashboardPage(
                 )
             ),
             
-            # Section 3: Analysis Parameters
+            # ===========================================
+            # SECTION 3: ANALYSIS PARAMETERS
+            # ===========================================
+            # PURPOSE: Configure all analysis settings
+            # STRATEGY: Comprehensive parameter setup in logical order
+            # WHY THIRD: Requires loaded data to populate options
             div(class = "panel panel-primary",
                 div(class = "panel-heading",
                     h4(class = "panel-title",
                        tags$a(`data-toggle` = "collapse", 
-                              `data-parent` = "#accordion",  # Add this for accordion behavior
+                              `data-parent` = "#accordion",
                               href = "#collapse3",
                               icon("chart-line"), " 3. Analysis Parameters"))
                 ),
                 div(id = "collapse3", class = "panel-collapse collapse",
                     div(class = "panel-body",
-                        # Better graph type selection with icons
+                        
+                        # ANALYSIS TYPE SELECTION
+                        # STRATEGY: Radio buttons for mutually exclusive choices
+                        # PURPOSE: Determines entire analysis workflow
                         radioButtons("graph_type", 
                                      "Graph Type",
                                      choices = list(
-                                       "Bar Plot" = "Bar plot",
-                                       "Line Chart" = "Curve"
+                                       "Bar Plot" = "Bar plot",      # For group comparisons
+                                       "Line Chart" = "Curve"        # For time course/trends
                                      ),
                                      selected = "Bar plot",
                                      inline = TRUE),
                         
-                        uiOutput("rootSelect"),
-                        uiOutput("columnSelect"),
-                        uiOutput("editParamsBtn"),
+                        # DYNAMIC UI OUTPUTS
+                        # STRATEGY: Server-generated UI based on loaded data
+                        # BENEFIT: Options automatically populate from actual data
+                        uiOutput("rootSelect"),      # Variable selection
+                        uiOutput("columnSelect"),    # Parameter column selection
+                        uiOutput("editParamsBtn"),   # Time parameters (Line Chart only)
                         
-                        # Add help text and tooltips
+                        # FACET VARIABLE SELECTION
+                        # PURPOSE: How to split data into multiple panels
+                        # STRATEGY: Clear labeling with explanation
                         div(
                           tags$label(
                             strong("Facet Variable"), 
                             span(": Choose how to split your data into separate panels", style = "font-weight: normal;"),
                             style = "margin-bottom: 10px; display: block;"
                           ),
-                          selectInput("facet_var", NULL,  # Set label to NULL since we're using custom label above
+                          selectInput("facet_var", NULL,
                                       choices = c("var1", "var2"))
                         ),
                         
-                        # Order controls
+                        # GROUP ORDERING CONTROLS
+                        # STRATEGY: Drag-and-drop interface for intuitive reordering
+                        # PURPOSE: Control order of groups in plots and legends
                         helpText("Drag to reorder:"),
                         uiOutput("var2_order_ui"), 
                         uiOutput("var1_order_ui"),
                         
-                        # Color controls
-                        helpText("Select colors:"),
-                        uiOutput("dynamic_color_inputs"),
-                        
+                        # CONTROL GROUP SELECTION
+                        # STRATEGY: Conditional display - only for Line Chart analysis
+                        # PURPOSE: Statistical comparisons need a reference group
+                        # WHY CONDITIONAL: Bar plots don't use control groups
+                        conditionalPanel(
+                          condition = "input.graph_type == 'Curve'",
+                          div(
+                            tags$label(
+                              strong("Control Group"),
+                              span(": Select the control group for statistical analysis", style = "font-weight: normal;"),
+                              style = "margin-bottom: 10px; display: block;"
+                            ),
+                            uiOutput("control_group_ui")
+                          )
+                        ),
                         hr(),
+
+                        # COLOR CUSTOMIZATION
+                        # STRATEGY: Dynamic color inputs based on number of groups
+                        # PURPOSE: Allow custom color schemes for better visualization
+                        div(
+                          tags$label(
+                            strong("Select colors:"),
+                            style = "margin-bottom: 10px; display: block;"
+                          )
+                        ),
+                        uiOutput("dynamic_color_inputs"),
+                        hr(),
+                        
+                        # ANALYSIS EXECUTION
+                        # STRATEGY: Warning-colored button indicates significant action
+                        # PURPOSE: Execute the configured analysis
                         actionButton("start_analysis", "Start Analysis", 
                                      icon = icon("play"),
                                      class = "btn-warning btn-block")
@@ -249,102 +395,186 @@ ui <- dashboardPage(
                 )
             ),
             
-            # Section 4: Export Results
+            # ===========================================
+            # SECTION 4: EXPORT RESULTS
+            # ===========================================
+            # PURPOSE: Save analysis results and plots
+            # STRATEGY: Separate exports for data and plots with full customization
+            # WHY LAST: Only available after analysis is complete
             div(class = "panel panel-primary",
                 div(class = "panel-heading",
                     h4(class = "panel-title",
                        tags$a(`data-toggle` = "collapse",
-                              `data-parent` = "#accordion",  # Add this for accordion behavior
+                              `data-parent` = "#accordion",
                               href = "#collapse4",
                               icon("download"), " 4. Export Results"))
                 ),
                 div(id = "collapse4", class = "panel-collapse collapse",
                     div(class = "panel-body",
-                        # Statistics download
+                        
+                        # STATISTICAL DATA EXPORT
+                        # STRATEGY: .zip format with multiple .txt files
+                        # BENEFIT: Organized, readable, and universally compatible
                         strong("Statistical Results:"),
                         br(), br(),
-                        downloadButton("download_parametric", 
-                                       "Parametric Analysis", 
-                                       icon = icon("file-excel"),
-                                       class = "btn-success btn-block"),
+                        textInput("stats_filename", "Filename (without extension)", 
+                                  value = "statistical_results", 
+                                  placeholder = "Enter filename"),
                         br(),
-                        downloadButton("download_non_parametric", 
-                                       "Non-parametric Analysis", 
-                                       icon = icon("file-excel"),
-                                       class = "btn-warning btn-block"),
+                        actionButton("export_stats", 
+                                     "Export Statistical Data (.zip)", 
+                                     icon = icon("file-archive"),
+                                     class = "btn-success btn-block"),
                         
                         hr(),
                         
-                        # Plot download
-                        strong("Save Plot"),
+                        # PLOT EXPORT SECTION
+                        # STRATEGY: Comprehensive customization options
+                        # PURPOSE: Professional-quality plot output
+                        strong("Export Plot:"),
                         br(), br(),
+                        
+                        # FILENAME AND FORMAT
                         fluidRow(
-                          column(4, 
-                            selectInput("file_format", "Format", 
-                                        choices = list(
-                                          "SVG (Vector)" = "svg",
-                                          "PNG (High-res)" = "png", 
-                                          "PDF (Print)" = "pdf"
-                                        ))
+                          column(6, 
+                            textInput("plot_filename", "Filename", 
+                                      value = "plot", 
+                                      placeholder = "Enter filename")
                           ),
-                          column(4,
-                            selectInput("size_unit", "Unit", 
+                          column(6,
+                            # MULTIPLE FORMAT OPTIONS
+                            # STRATEGY: Different formats for different use cases
+                            selectInput("plot_format", "Format", 
                                         choices = list(
-                                          "Centimeters" = "cm",
-                                          "Inches" = "in"
+                                          "PNG (High-res)" = "png",    # General use
+                                          "PDF (Print)" = "pdf",       # Publications
+                                          "SVG (Vector)" = "svg",      # Scalable graphics
+                                          "JPEG" = "jpg"               # Compressed
                                         ),
-                                        selected = "cm")
-                          ),
-                          column(4,
-                            numericInput("plot_width", "Width", 
-                                         value = 20, min = 5, max = 50, step = 0.5)
+                                        selected = "png")
                           )
                         ),
-                        # Add dynamic label showing current unit
-                        textOutput("width_label"),
+                        
+                        # DIMENSIONS AND UNITS
+                        # STRATEGY: Scientific units (cm) by default, with alternatives
+                        # PURPOSE: Professional control over plot sizing
+                        fluidRow(
+                          column(4,
+                            numericInput("plot_width", "Width", 
+                                         value = 30, min = 10, max = 50, step = 1)
+                          ),
+                          column(4,
+                            numericInput("plot_height", "Height", 
+                                         value = 20, min = 5, max = 40, step = 1)
+                          ),
+                          column(4,
+                            # SCIENTIFIC UNITS BY DEFAULT
+                            selectInput("plot_units", "Units",
+                                        choices = list(
+                                          "Centimeters" = "cm",    # Scientific standard
+                                          "Inches" = "in",         # US standard
+                                          "Millimeters" = "mm"     # Precision work
+                                        ),
+                                        selected = "cm")
+                          )
+                        ),
                         br(),
-                        downloadButton("save_plot", "Save Plot", 
-                                       icon = icon("image"),
-                                       class = "btn-primary btn-block")
+                        
+                        # EXPORT ACTION
+                        actionButton("export_plot", "Export Plot", 
+                                     icon = icon("image"),
+                                     class = "btn-primary btn-block")
                     )
                 )
             )
           )
        ),
           
-          # Main panel with organized tabs
+          # ===========================================
+          # MAIN PANEL: RESULTS AND DATA DISPLAY
+          # ===========================================
+          # STRATEGY: Tabbed interface for organized information display
+          # PURPOSE: Separate data overview, results, and help information
           mainPanel(
-            # Add tabs for better organization
+            
+            # TABBED INTERFACE
+            # STRATEGY: Logical separation of different information types
+            # BENEFIT: Reduces cognitive load and improves navigation
             tabsetPanel(
-              id = "main_tabs",  # Add this ID
+              id = "main_tabs",
+              
+              # ===========================================
+              # TAB 1: DATA OVERVIEW
+              # ===========================================
+              # PURPOSE: Preview loaded data and file information
+              # STRATEGY: Interactive table with toggle functionality
               tabPanel("Data Overview", 
                        icon = icon("table"),
                        br(),
+                       
+                       # FILE INFORMATION
+                       # PURPOSE: Show which files were successfully loaded
                        tableOutput("selected_files"),
                        hr(),
-                       tableOutput("processed_data")
+                       
+                       # TABLE TOGGLE BUTTON
+                       # STRATEGY: User control over data display level
+                       # PURPOSE: Preview (5 rows) vs full table view
+                       uiOutput("toggle_button"),
+                       br(),
+                       
+                       # MAIN DATA TABLE
+                       # STRATEGY: DT datatable for interactive features
+                       # FEATURES: Horizontal scroll, filtering, pagination
+                       DT::dataTableOutput("processed_data")
               ),
+              
+              # ===========================================
+              # TAB 2: ANALYSIS RESULTS
+              # ===========================================
+              # PURPOSE: Display analysis outputs and visualizations
+              # STRATEGY: Information boxes + main plot display
               tabPanel("Analysis Results", 
                        icon = icon("chart-line"),
                        br(),
+                       
+                       # INFORMATION BOXES
+                       # STRATEGY: Key information displayed prominently
                        fluidRow(
+                         # SELECTED VARIABLE INFO
                          column(6, 
                            div(class = "info-box",
                              h4("Selected Variable"),
                              textOutput("selectedValue")
                            )
                          ),
-                         column(6,
-                           div(class = "info-box",
-                             h4("Normality Test"),
-                             verbatimTextOutput("normality_result")
+                         
+                         # NORMALITY TEST RESULTS
+                         # STRATEGY: Conditional display - only for Bar plots
+                         # WHY: Line charts don't use normality testing
+                         conditionalPanel(
+                           condition = "input.graph_type == 'Bar plot'",
+                           column(6,
+                             div(class = "info-box",
+                               h4("Normality Test"),
+                               verbatimTextOutput("normality_result")
+                             )
                            )
                          )
                        ),
                        hr(),
+                       
+                       # MAIN PLOT DISPLAY
+                       # STRATEGY: Fixed height for consistent layout
+                       # CSS: Responsive sizing handled in stylesheet above
                        plotOutput("plot_result", height = "600px")
               ),
               
+              # ===========================================
+              # TAB 3: HELP DOCUMENTATION
+              # ===========================================
+              # PURPOSE: Comprehensive user documentation
+              # STRATEGY: Markdown file for easy editing and formatting
               tabPanel("Help", 
                        icon = icon("question-circle"),
                        includeMarkdown("help.md")
