@@ -536,9 +536,9 @@ server <- function(input, output, session) {
     
     # SHAPIRO-WILK TEST
     # STRATEGY: Group-wise normality testing
-    shapiro_df <- result_df$data %>%
-      dplyr::group_by(.data[[var2]], .data[[var1]]) %>%
-      rstatix::shapiro_test(.data[[MEASURE_COL]])
+    # shapiro_df <- result_df$data %>%
+    #   dplyr::group_by(.data[[var2]], .data[[var1]]) %>%
+    #   rstatix::shapiro_test(.data[[MEASURE_COL]])
     
     # INTERPRET RESULTS
     # STRATEGY: Simple yes/no interpretation for users

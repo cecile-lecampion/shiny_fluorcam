@@ -1,0 +1,169 @@
+########################################################################################################################################
+# Function used in the script
+########################################################################################################################################
+# STRATEGY: Modular helper functions for data processing and statistical analysis
+# - Statistical testing functions for normality and multiple comparisons
+# - Data processing pipeline for FluorCam files
+# - Visualization functions for bar plots and curve analysis
+# - Separation of concerns: each function has a single responsibility
+# - Reusable components that can be tested independently
+
+
+# ===========================================
+# SECTION 1: DATA PROCESSING FUNCTIONS
+# ===========================================
+# PURPOSE: Handle FluorCam file processing and data preparation
+# STRATEGY: Modular pipeline for file reading, cleaning, and transformation
+
+# Function to extract the "area" from the file header
+#========================================================================================================================================
+# STRATEGY: Parse FluorCam file headers for metadata extraction
+# PURPOSE: Extract area information for potential future use
+# METHOD: Read first few lines and pattern match for "Area:" field
+# NOTE: Currently not used in main pipeline but available for expansion
+
+extract_area_from_header <- function(file_name) {
+  # READ HEADER LINES ONLY
+  # STRATEGY: Efficient reading - only first 5 lines needed
+  # PURPOSE: Avoid loading entire file just for header info
+  lines <- readLines(file_name, n = 5) # Adjust n if the header is longer
+
+  # PATTERN MATCHING
+  # STRATEGY: Use grep for flexible pattern matching
+  # PURPOSE: Find line containing area information
+  area_line <- grep("Area:", lines, value = TRUE)
+
+  if (length(area_line) > 0) {
+    # EXTRACT VALUE
+    # STRATEGY: Remove everything before "Area:" and whitespace
+    # PURPOSE: Clean extraction of numerical area value
+    gsub(".*Area:\\s*", "", area_line)
+  } else {
+    # GRACEFUL FAILURE
+    # STRATEGY: Return NA instead of error if area not found
+    # PURPOSE: Allow processing to continue without area information
+    return(NA)
+  }
+}
+
+# Function to process data files
+#========================================================================================================================================
+# STRATEGY: Complete data processing pipeline for FluorCam files
+# PURPOSE: Transform raw .TXT files into analysis-ready dataframe
+# WORKFLOW: File discovery → cleaning → calculation → naming → merging
+# INPUT: File pattern, directory path, and variable naming scheme
+# OUTPUT: Combined dataframe ready for statistical analysis
+
+process_data_files <- function(pattern, areas, var1, var2, var3, dirpath) {
+  # FILE DISCOVERY
+  # STRATEGY: Use pattern matching to find relevant files
+  # PURPOSE: Flexible file selection based on user input
+  files <- list.files(path = dirpath, pattern = pattern, full.names = TRUE)
+  print(paste("Files found:", files))  # Debug output for troubleshooting
+
+  # INNER FUNCTION: FILE CLEANING
+  # STRATEGY: Nested function for single responsibility
+  # PURPOSE: Remove FluorCam header lines and read data
+  remove_first_two_lines <- function(file_name, area) {
+    # READ ALL LINES
+    # STRATEGY: Read entire file first for flexible processing
+    lines <- readLines(file_name)
+
+    # REMOVE EMPTY LINES
+    # STRATEGY: Clean data by removing blank lines
+    # PURPOSE: Prevent parsing errors from empty rows
+    lines <- lines[lines != ""]
+
+    # REMOVE HEADER LINES
+    # STRATEGY: FluorCam files have 2-line headers that must be removed
+    # PURPOSE: Leave only the data table for proper parsing
+    if(length(lines) > 2){
+      lines <- lines[-c(1,2)]  # Remove first two lines
+    } else {
+      # ERROR HANDLING
+      # STRATEGY: Informative error message for insufficient data
+      stop("Le fichier ne contient pas assez de lignes.")
+    }
+
+    # PARSE DATA TABLE
+    # STRATEGY: Use read.table with tab separation (FluorCam standard)
+    # PURPOSE: Convert cleaned text to structured dataframe
+    data <- read.table(text = lines, sep = "\t", header = TRUE)
+    return(data)
+  }
+
+  # INNER FUNCTION: Fv/Fm CALCULATION
+  # STRATEGY: Automatic calculation of key fluorescence parameter
+  # PURPOSE: Fv/Fm is standard measure of photosynthetic efficiency
+  # FORMULA: Fv/Fm = (Fm - F0) / Fm = Fv / Fm
+  compute_Fv_Fm <- function(df) {
+    df$Fv_Fm <- df$Fv / df$Fm
+    return(df)
+  }
+
+  # INNER FUNCTION: NAME COLUMN ADDITION
+  # STRATEGY: Add filename as identifier column
+  # PURPOSE: Track data source for later variable extraction
+  add_name_column <- function(df, name) {
+    df$Name <- name
+    return(df)
+  }
+
+  # INNER FUNCTION: VARIABLE EXTRACTION
+  # STRATEGY: Parse filename into separate variable columns
+  # PURPOSE: Extract experimental variables from systematic naming
+  # METHOD: Split on underscore separator (VAR1_VAR2_VAR3.TXT)
+  divide_name <- function(df) {
+    df <- tidyr::separate(
+      data = df, 
+      col = "Name", 
+      into = c(var1, var2, var3),  # User-defined variable names
+      sep = "_",                   # Underscore separator
+      remove = TRUE                # Remove original Name column
+    )
+    return(df)
+  }
+
+  # MAIN PROCESSING PIPELINE
+  # STRATEGY: Apply processing functions to all files
+
+  # STEP 1: CLEAN ALL FILES
+  # STRATEGY: lapply for efficient list processing
+  # PURPOSE: Apply cleaning function to each file
+  Liste <- lapply(files, remove_first_two_lines, area = "")
+  # CREATE NAMED LIST
+  # STRATEGY: Use filenames (without extension) as list names
+  # PURPOSE: Maintain file identity through processing
+  names(Liste) <- tools::file_path_sans_ext(basename(files))
+
+  # STEP 2: TRANSPOSE DATA
+  # STRATEGY: FluorCam data comes with parameters as rows, need columns
+  # PURPOSE: Transform from parameter-per-row to parameter-per-column
+  # METHOD: data.table::transpose with X column as names
+  Liste <- lapply(Liste, data.table::transpose, make.names = "X")
+
+  # STEP 3: CALCULATE Fv/Fm
+  # STRATEGY: Apply calculation to all datasets
+  # PURPOSE: Add derived parameter to all files
+  Liste <- lapply(Liste, compute_Fv_Fm)
+
+  # STEP 4: ADD FILENAME IDENTIFIERS
+  # STRATEGY: Use names() to apply filename to each dataset
+  # PURPOSE: Prepare for variable extraction
+  Liste <- lapply(names(Liste), function(name) {
+    add_name_column(Liste[[name]], name)
+  })
+
+  # STEP 5: EXTRACT VARIABLES FROM FILENAMES
+  # STRATEGY: Parse systematic filenames into experimental variables
+  # PURPOSE: Create grouping variables for statistical analysis
+  Liste <- lapply(Liste, divide_name)
+
+  # STEP 6: COMBINE ALL DATA
+  # STRATEGY: Row-bind all processed datasets
+  # PURPOSE: Create single analysis-ready dataframe
+  df <- do.call(rbind, Liste)
+
+
+  return(df)
+}
