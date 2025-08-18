@@ -57,28 +57,23 @@ check_normality <- function(shapiro_df) {
 # OUTPUT: Dataframe with groups and their significance letters
 
 generate_cld_parametric <- function(tukey_df, var1_col, var2_col) {
-  tukey_df %>%
-    # GROUP BY FACET VARIABLE
-    # STRATEGY: Separate letter assignments for each facet panel
-    # PURPOSE: Each facet gets independent significance groupings
-    group_by(!!sym(var1_col)) %>%
-    summarise(
-      # MULTCOMP LETTER GENERATION
-      # STRATEGY: Use multcompView package for standard letter assignment
-      # PURPOSE: Generate widely-accepted compact letter display
+  result <- tukey_df %>%
+    dplyr::group_by(.data[[var1_col]]) %>%  # Use .data[[]] consistently
+    dplyr::summarise(
       cld = list(multcompView::multcompLetters(
-        # CREATE NAMED VECTOR: p-values with group comparison names
-        setNames(p.adj, paste(group1, group2, sep = "-")), # nolint: object_usage_linter.
-        Letters = letters  # Use lowercase letters (a, b, c, ...)
-      )$Letters)
+        setNames(p.adj, paste(group1, group2, sep = "-")),
+        Letters = letters
+      )$Letters),
+      .groups = 'drop'
     ) %>%
-    # UNNEST LETTER ASSIGNMENTS
-    # STRATEGY: Convert list-column to long format for merging
-    # PURPOSE: One row per group with assigned letter
-    unnest_longer(cld) %>%
-    # RENAME FOR CONSISTENCY
-    # STRATEGY: Use dynamic column names matching input data structure
-    rename(!!sym(var2_col) := cld_id)
+    tidyr::unnest_longer(cld)  # Add tidyr:: prefix
+  
+  # CREATE CORRECTLY NAMED COLUMNS
+  result[[var2_col]] <- names(result$cld)
+  result$cld <- unname(result$cld)
+  
+  # SELECT FINAL COLUMNS
+  result[c(var1_col, var2_col, "cld")]
 }
 
 # Generate CLD values for non-parametric data
@@ -89,22 +84,23 @@ generate_cld_parametric <- function(tukey_df, var1_col, var2_col) {
 # OUTPUT: Dataframe with groups and their significance letters
 
 generate_cld_nonparametric <- function(dunn_df, var1_col, var2_col) {
-  dunn_df %>%
-    # GROUP BY FACET VARIABLE
-    dplyr::group_by(!!sym(var1_col)) %>%
+  result <- dunn_df %>%
+    dplyr::group_by(.data[[var1_col]]) %>%  # Use .data[[]] consistently
     dplyr::summarise(
-      # MULTCOMP LETTER GENERATION (same logic as parametric)
       cld = list(multcompView::multcompLetters(
         setNames(p.adj, paste(group1, group2, sep = "-")),
         Letters = letters
       )$Letters),
-      .groups = 'drop'  # Remove grouping after summarise
+      .groups = 'drop'
     ) %>%
-    # UNNEST AND RESTRUCTURE
-    # STRATEGY: More explicit data manipulation for non-parametric case
-    tidyr::unnest_longer(cld) %>%
-    dplyr::mutate(!!sym(var2_col) := names(cld)) %>%  # Extract group names
-    dplyr::select(!!sym(var1_col), !!sym(var2_col), cld)  # Select final columns
+    tidyr::unnest_longer(cld)  # Add tidyr:: prefix
+  
+  # CREATE CORRECTLY NAMED COLUMNS
+  result[[var2_col]] <- names(result$cld)
+  result$cld <- unname(result$cld)
+  
+  # SELECT FINAL COLUMNS
+  result[c(var1_col, var2_col, "cld")]
 }
 
 # Define a function to perform Dunn test
@@ -116,15 +112,27 @@ generate_cld_nonparametric <- function(dunn_df, var1_col, var2_col) {
 
 test_dunn <- function(df_data, var1, var2, MEASURE_COL) {
   # DUNN TEST EXECUTION
-  # STRATEGY: Group-wise Dunn testing with BH correction
-  # PURPOSE: Control false discovery rate in multiple comparisons
   pval <- df_data %>%
-    group_by(!!sym(var1)) %>%  # Separate tests for each facet
-    dunn_test(
-      formula = as.formula(paste(MEASURE_COL, "~", var2)),  # Dynamic formula creation
-      p.adjust.method = "BH"  # Benjamini-Hochberg correction
+    dplyr::group_by(.data[[var1]]) %>%  # Use .data[[]] consistently
+    rstatix::dunn_test(
+      formula = as.formula(paste(MEASURE_COL, "~", var2)),
+      p.adjust.method = "BH"
     ) %>%
-    as.data.frame()  # Convert to standard dataframe for compatibility
+    as.data.frame()
+  return(pval)
+}
+
+# Add the missing test_tukey function
+test_tukey <- function(df_data, var1, var2, MEASURE_COL) {
+  # TUKEY HSD TEST EXECUTION
+  # STRATEGY: Group-wise Tukey testing with family-wise error control
+  # PURPOSE: Pairwise comparisons with strict Type I error control
+  pval <- df_data %>%
+    dplyr::group_by(.data[[var1]]) %>%  # Use .data[[]] consistently
+    rstatix::tukey_hsd(
+      formula = as.formula(paste(MEASURE_COL, "~", var2))
+    ) %>%
+    as.data.frame()
   return(pval)
 }
 
@@ -256,10 +264,13 @@ process_data_files <- function(pattern, areas, var1, var2, var3, dirpath) {
   names(Liste) <- tools::file_path_sans_ext(basename(files))
   
   # STEP 2: TRANSPOSE DATA
-  # STRATEGY: FluorCam data comes with parameters as rows, need columns
-  # PURPOSE: Transform from parameter-per-row to parameter-per-column
-  # METHOD: data.table::transpose with X column as names
-  Liste <- lapply(Liste, data.table::transpose, make.names = "X")
+  # REPLACE data.table::transpose with base R approach
+  Liste <- lapply(Liste, function(df) {
+    # Convert to matrix, transpose, then back to data.frame
+    df_t <- as.data.frame(t(df[-1]))  # Exclude first column (X), transpose rest
+    colnames(df_t) <- df$X  # Use X column as new column names
+    return(df_t)
+  })
   
   # STEP 3: CALCULATE Fv/Fm
   # STRATEGY: Apply calculation to all datasets
@@ -303,112 +314,50 @@ process_data_files <- function(pattern, areas, var1, var2, var3, dirpath) {
 # INPUT: Data, variables, measure column, ordering, and color options
 # OUTPUT: ggplot object with statistical annotations and summary statistics
 
-analyse_barplot <- function(
-    data, 
-    var1, var2, measure_col, 
-    var1_order = NULL, var2_order = NULL,
-    fill_color = "ivory1", line_color = "darkgrey", point_color = "darkgreen"
-) {
-  # ===========================================
-  # INPUT VALIDATION SECTION
-  # ===========================================
-  # STRATEGY: Comprehensive input checking before processing
-  # PURPOSE: Prevent errors and provide clear feedback
+analyse_barplot <- function(data, var1, var2, measure_col, var1_order = NULL, var2_order = NULL, 
+                           fill_color = "ivory1", line_color = "darkgrey", point_color = "darkgreen") {
   
-  if(is.null(data) || nrow(data) == 0) {
-    stop("Data is empty or NULL")
-  }
-
-  if(!var1 %in% colnames(data)) {
-    stop(paste("Variable", var1, "not found in data"))
-  }
-
-  if(!var2 %in% colnames(data)) {
-    stop(paste("Variable", var2, "not found in data"))
-  }
-
-  if(!measure_col %in% colnames(data)) {
-    stop(paste("Measure column", measure_col, "not found in data"))
-  }
-
-  # ===========================================
-  # DATA PREPARATION SECTION
-  # ===========================================
-  # STRATEGY: Convert to factors and apply user-specified ordering
-  # PURPOSE: Control plot appearance and ensure consistent grouping
-  
-  # FACTOR CONVERSION WITH ORDERING
-  # STRATEGY: Apply user-specified order if provided, otherwise use default
-  # PURPOSE: User control over plot layout and legend order
-  if(!is.null(var1_order)) {
-    data[[var1]] <- factor(data[[var1]], levels = var1_order)
-  } else {
-    data[[var1]] <- as.factor(data[[var1]])
-  }
-
-  if(!is.null(var2_order)) {
-    data[[var2]] <- factor(data[[var2]], levels = var2_order)
-  } else {
-    data[[var2]] <- as.factor(data[[var2]])
+  # Validate inputs
+  if (!all(c(var1, var2, measure_col) %in% colnames(data))) {
+    stop("One or more required columns missing from data")
   }
   
-  # ===========================================
-  # STATISTICAL TESTING SECTION
-  # ===========================================
-  # STRATEGY: Automatic selection between parametric and non-parametric methods
-  # PURPOSE: Appropriate statistical analysis based on data distribution
+  # CONFIDENCE INTERVAL CALCULATION - Fix dplyr syntax
+  conf_int <- data %>%
+    dplyr::group_by(.data[[var1]], .data[[var2]]) %>%
+    dplyr::summarise(
+      n = dplyr::n(),
+      mean = mean(.data[[measure_col]], na.rm = TRUE),
+      sd = sd(.data[[measure_col]], na.rm = TRUE),
+      se = sd / sqrt(n),
+      .groups = 'drop'
+    )
   
-  # NORMALITY TESTING
-  # STRATEGY: Group-wise Shapiro-Wilk testing
-  # PURPOSE: Determine appropriate statistical approach
+  # NORMALITY ASSESSMENT - Fix dplyr syntax
   shapiro_df <- data %>%
-    group_by(!!sym(var2), !!sym(var1)) %>%
-    rstatix::shapiro_test(!!sym(measure_col))
+    dplyr::group_by(.data[[var1]], .data[[var2]]) %>%
+    rstatix::shapiro_test(.data[[measure_col]])
   
-  # NORMALITY DECISION
-  # STRATEGY: Use helper function for consistent logic
-  # PURPOSE: Single decision point for statistical method selection
   flag_normal <- check_normality(shapiro_df)
   
-  # ===========================================
-  # PARAMETRIC ANALYSIS BRANCH
-  # ===========================================
-  # STRATEGY: Full parametric pipeline with ANOVA and Tukey HSD
-  # PURPOSE: When normality assumptions are met
-  
   if (flag_normal) {
-    # SUMMARY STATISTICS
-    # STRATEGY: Use summarySE for mean ± standard error
-    # PURPOSE: Generate values for bar heights and error bars
-    my_summary <- summarySE(data, measurevar = measure_col, groupvars = c(var2, var1))
+    # PARAMETRIC ANALYSIS PATH
     
-    # ANOVA TESTING
-    # STRATEGY: Group-wise ANOVA for each facet level
-    # PURPOSE: Test for overall differences before post-hoc testing
-    anova_result <- data %>%
-      group_by(!!sym(var1)) %>%
-      rstatix::anova_test(reformulate(var2, measure_col))
+    # ANOVA TESTING - Fix dplyr syntax
+    anova_results <- data %>%
+      dplyr::group_by(.data[[var1]]) %>%
+      rstatix::anova_test(formula = as.formula(paste(measure_col, "~", var2)))
     
-    # TUKEY POST-HOC TESTING
-    # STRATEGY: Tukey HSD for pairwise comparisons
-    # PURPOSE: Identify which specific groups differ
-    tukey_results <- data %>%
-      group_by(!!sym(var1)) %>% 
-      rstatix::tukey_hsd(as.formula(paste(measure_col, "~", var2)))
+    # TUKEY POST HOC TEST
+    tukey_results <- test_tukey(data, var1, var2, measure_col)
     
-    # COMPACT LETTER DISPLAY
-    # STRATEGY: Convert p-values to letter annotations
-    # PURPOSE: Visual indication of statistical groupings
+    # COMPACT LETTER DISPLAY (PARAMETRIC)
     cld_table_parametric <- generate_cld_parametric(tukey_results, var1, var2)
     
-    # MERGE SUMMARY WITH CLD
-    # STRATEGY: Combine statistical results with summary data
-    # PURPOSE: Single dataframe for plotting with all needed information
-    df2 <- merge(my_summary, cld_table_parametric, by = c(var2, var1), all.x = TRUE)
+    # MERGE AND PREPARE PLOTTING DATA
+    df2 <- merge(conf_int, cld_table_parametric, by.x = c(var2, var1), by.y = c(var2, var1))
     
     # PRESERVE FACTOR ORDERING
-    # STRATEGY: Ensure user-specified order is maintained after merge
-    # PURPOSE: Plot appears as user intended
     if(!is.null(var1_order)) {
       df2[[var1]] <- factor(df2[[var1]], levels = var1_order)
     }
@@ -416,216 +365,122 @@ analyse_barplot <- function(
       df2[[var2]] <- factor(df2[[var2]], levels = var2_order)
     }
     
-    # PLOT CONSTRUCTION (PARAMETRIC)
-    # STRATEGY: Layered ggplot with statistical annotations
-    # PURPOSE: Professional publication-quality visualization
+    # PLOT CONSTRUCTION (PARAMETRIC) - Fix ggplot syntax
     p <- df2 %>%
-      mutate(!!sym(var1) := as.factor(!!sym(var1)),
-             !!sym(var2) := as.factor(!!sym(var2))) %>%
-      ggplot(aes(x = !!sym(var2), y = !!sym(measure_col), fill = !!sym(var2))) +
-      
-      # BAR LAYER
-      # STRATEGY: geom_col for exact heights (not count-based)
-      # PURPOSE: Show mean values with custom styling
-      geom_col(color = line_color, width = 0.6, position = position_dodge2(padding = 0.05)) +
-      
-      # FILL COLOR SCALE
-      # STRATEGY: Manual color specification for consistency
-      # PURPOSE: User control over plot appearance
-      scale_fill_manual(values = rep(fill_color, length(unique(df2[[var2]])))) +
-      
-      # Y-AXIS SCALING
-      # STRATEGY: Start at zero with small expansion for CLD labels
-      # PURPOSE: Honest representation with space for annotations
-      scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
-      
-      # DATA POINTS OVERLAY
-      # STRATEGY: Show individual observations as points
-      # PURPOSE: Transparency about data distribution and sample size
-      geom_quasirandom(
-        data = data,  # Use original data, not summary
-        aes(x = !!sym(var2), y = !!sym(measure_col)), 
-        color = point_color, width = 0.3, alpha = 0.6
-      ) +
-      
-      # ERROR BARS
-      # STRATEGY: Standard error bars from summary statistics
-      # PURPOSE: Show uncertainty in mean estimates
-      geom_segment(aes(x = !!sym(var2), xend = !!sym(var2), 
-                       y = pmax(0, !!sym(measure_col) - ci), 
-                       yend = !!sym(measure_col) + ci), 
-                   color = "black") +
-      
-      # SIGNIFICANCE LETTERS
-      # STRATEGY: Text annotations above bars
-      # PURPOSE: Clear indication of statistical groupings
-      geom_text(aes(x = !!sym(var2), 
-                    y = !!sym(measure_col) + (0.15 * max(df2[[measure_col]], na.rm = TRUE)), 
-                    label = cld), 
-                size = 3, inherit.aes = TRUE) +
-      
-      # THEME AND STYLING
-      # STRATEGY: Clean, professional theme
-      # PURPOSE: Publication-ready appearance
-      theme_classic() +
-      theme(
-        axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
-        axis.line.x = element_line(linewidth = 0.5),
-        axis.line.y = element_line(linewidth = 0.5),
-        panel.background = element_rect(fill = 'transparent', color = NA),
-        plot.background = element_rect(fill = 'transparent', color = NA),
-        axis.text.y = element_text(vjust = 1),
-        legend.position = "none",  # Remove legend (redundant with x-axis)
-        strip.background = element_blank(),
-        strip.placement = "outside",
-        strip.text = element_text(face = "plain", size = 10, color = "black", hjust = 0.5)
-      ) +
-      
-      # FACETING
-      # STRATEGY: Panel separation by facet variable
-      # PURPOSE: Clear separation of different experimental conditions
-      facet_wrap(as.formula(paste("~", var1)), nrow = 1, scales = "free_y") +
-      
-      # AXIS LABELS
-      # STRATEGY: Use variable names for clarity
-      # PURPOSE: Self-documenting plots
-      labs(x = var1, y = measure_col)
+      ggplot2::ggplot(ggplot2::aes(x = .data[[var2]], y = mean, fill = .data[[var2]])) +
+      ggplot2::geom_col(color = line_color, 
+               fill = fill_color, 
+               alpha = 0.7,
+               width = 0.8) +
+      ggplot2::geom_errorbar(ggplot2::aes(ymin = mean - se, ymax = mean + se), 
+                   color = line_color, 
+                   width = 0.4, 
+                   size = 0.8) +
+      ggplot2::geom_point(data = data, ggplot2::aes(y = .data[[measure_col]]), 
+                color = point_color, 
+                alpha = 0.6, 
+                size = 2, 
+                position = ggplot2::position_jitter(width = 0.2)) +
+      ggplot2::geom_text(ggplot2::aes(y = mean + se + 0.05 * max(mean + se, na.rm = TRUE), 
+                   label = cld), 
+               color = "black", 
+               size = 4, 
+               fontface = "bold") +
+      ggplot2::facet_wrap(as.formula(paste("~", var1)), scales = "free") +
+      ggplot2::labs(title = paste("Analysis of", measure_col, "by", var2, "and", var1),
+           subtitle = "Parametric analysis (ANOVA + Tukey HSD)",
+           x = var2, 
+           y = measure_col) +
+      ggplot2::theme_minimal() +
+      ggplot2::theme(
+        axis.text.x = ggplot2::element_text(angle = 45, hjust = 1),
+        legend.position = "none",
+        strip.text = ggplot2::element_text(size = 12, face = "bold"),
+        plot.title = ggplot2::element_text(size = 14, face = "bold"),
+        plot.subtitle = ggplot2::element_text(size = 12, color = "grey60")
+      )
     
     # RETURN PARAMETRIC RESULTS
-    # STRATEGY: Return both plot and all statistical results
-    # PURPOSE: Enable export of complete analysis
     return(list(
       plot = p,
-      summary = my_summary,
-      shapiro = shapiro_df,
-      anova = anova_result,
+      summary = conf_int,
+      anova = anova_results,
       tukey = tukey_results,
-      cld = cld_table_parametric
+      cld = cld_table_parametric,
+      test_type = "parametric"
     ))
     
   } else {
-    # ===========================================
-    # NON-PARAMETRIC ANALYSIS BRANCH
-    # ===========================================
-    # STRATEGY: Non-parametric pipeline with Kruskal-Wallis and Dunn tests
-    # PURPOSE: When normality assumptions are violated
+    # NON-PARAMETRIC ANALYSIS PATH - Fix dplyr syntax
+    kruskal_results <- data %>%
+      dplyr::group_by(.data[[var1]]) %>%
+      rstatix::kruskal_test(formula = as.formula(paste(measure_col, "~", var2)))
     
-    # MEDIAN WITH CONFIDENCE INTERVALS
-    # STRATEGY: Bootstrap confidence intervals for robust estimates
-    # PURPOSE: Non-parametric equivalent of mean ± SE
-    conf_int <- groupwiseMedian(
-      data = data,
-      var = measure_col,
-      group = c(var2, var1),
-      conf = 0.95,       # 95% confidence level
-      R = 5000,          # Bootstrap replicates
-      percentile = TRUE, # Percentile method
-      bca = FALSE,       # No bias-corrected accelerated
-      digits = 3
-    )
+    # DUNN POST HOC TEST
+    dunn_results <- test_dunn(data, var1, var2, measure_col)
     
-    # KRUSKAL-WALLIS TESTING
-    # STRATEGY: Non-parametric equivalent of ANOVA
-    # PURPOSE: Test for overall differences between groups
-    kruskal_pval <- data %>%
-      group_by(.data[[var1]]) %>%
-      rstatix::kruskal_test(as.formula(paste(measure_col, "~", var2))) %>%
-      dplyr::select(all_of(var1), p)
+    # COMPACT LETTER DISPLAY (NON-PARAMETRIC)
+    cld_table_nonparametric <- generate_cld_nonparametric(dunn_results, var1, var2)
     
-    # SIGNIFICANCE CHECK
-    # STRATEGY: Only proceed with post-hoc if overall test is significant
-    # PURPOSE: Prevent multiple comparisons when not justified
-    significant <- any(kruskal_pval$p < 0.05)
+    # MERGE AND PREPARE PLOTTING DATA
+    df2 <- merge(conf_int, cld_table_nonparametric, by.x = c(var2, var1), by.y = c(var2, var1))
     
-    if (significant) {
-      # DUNN POST-HOC TESTING
-      # STRATEGY: Non-parametric pairwise comparisons
-      # PURPOSE: Identify which specific groups differ
-      pval_dunn <- test_dunn(data, var1, var2, measure_col)
-      
-      # COMPACT LETTER DISPLAY (NON-PARAMETRIC)
-      # STRATEGY: Generate letters from Dunn test results
-      # PURPOSE: Visual grouping for non-parametric results
-      cld_table_nonparametric <- generate_cld_nonparametric(pval_dunn, var1, var2)
-      
-      # MERGE AND PREPARE PLOTTING DATA
-      df2 <- merge(conf_int, cld_table_nonparametric, by.x = c(var2, var1), by.y = c(var2, var1))
+    # PRESERVE FACTOR ORDERING
+    if(!is.null(var1_order)) {
       df2[[var1]] <- factor(df2[[var1]], levels = var1_order)
-      df2[[var2]] <- factor(df2[[var2]], levels = var2_order)
-      
-      # PLOT CONSTRUCTION (NON-PARAMETRIC)
-      # STRATEGY: Similar to parametric but using medians and percentile CIs
-      # PURPOSE: Appropriate visualization for non-parametric analysis
-      p <- df2 %>%
-        ggplot(aes(x = !!sym(var2), y = Median, fill = !!sym(var2))) +
-        
-        # MEDIAN BARS
-        # STRATEGY: Show medians instead of means
-        # PURPOSE: Appropriate central tendency for non-normal data
-        geom_col(color = line_color, width = 0.6, position = position_dodge2(padding = 0.05)) +
-        scale_fill_manual(values = rep(fill_color, length(unique(df2[[var2]])))) +
-        scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
-        
-        # DATA POINTS OVERLAY
-        # STRATEGY: Same as parametric version
-        # PURPOSE: Show actual data distribution
-        geom_quasirandom(
-          data = data, 
-          aes(x = !!sym(var2), y = !!sym(measure_col)), 
-          color = point_color, width = 0.3, alpha = 0.6
-        ) +
-        
-        # CONFIDENCE INTERVAL BARS
-        # STRATEGY: Use bootstrap percentile confidence intervals
-        # PURPOSE: Show uncertainty in median estimates
-        geom_segment(aes(x = !!sym(var2), xend = !!sym(var2), 
-                         y = pmax(0, Percentile.lower), yend = Percentile.upper), 
-                     color = "black") +
-        
-        # SIGNIFICANCE LETTERS
-        # STRATEGY: Position relative to confidence intervals
-        # PURPOSE: Clear statistical grouping indication
-        geom_text(aes(x = !!sym(var2), y = Percentile.upper + (0.15 * Median), label = cld), 
-                  size = 3, inherit.aes = TRUE) +
-        
-        # THEME (SAME AS PARAMETRIC)
-        theme_classic() +
-        theme(
-          axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
-          axis.line.x = element_line(linewidth = 0.5),
-          axis.line.y = element_line(linewidth = 0.5),
-          panel.background = element_rect(fill = 'transparent', color = NA),
-          plot.background = element_rect(fill = 'transparent', color = NA),
-          axis.text.y = element_text(vjust = 1),
-          legend.position = "none",
-          strip.background = element_blank(),
-          strip.placement = "outside",
-          strip.text = element_text(face = "plain", size = 10, color = "black", hjust = 0.5)
-        ) +
-        facet_wrap(as.formula(paste("~", var1)), nrow = 1, scales = "free_y") +
-        labs(x = var1, y = measure_col)
-      
-      # RETURN NON-PARAMETRIC RESULTS
-      # STRATEGY: Return all relevant non-parametric statistics
-      # PURPOSE: Complete analysis package for export
-      return(list(
-        plot = p,
-        summary = conf_int,
-        shapiro = shapiro_df,
-        kruskal = kruskal_pval,
-        dunn = pval_dunn,
-        cld = cld_table_nonparametric
-      ))
-    } else {
-      # NO SIGNIFICANT DIFFERENCES
-      # STRATEGY: Return informative message instead of plot
-      # PURPOSE: Avoid misleading post-hoc testing when overall test is non-significant
-      return("Data are not significantly different, the Dunn test was not performed.")
     }
+    if(!is.null(var2_order)) {
+      df2[[var2]] <- factor(df2[[var2]], levels = var2_order)
+    }
+    
+    # PLOT CONSTRUCTION (NON-PARAMETRIC) - Fix ggplot syntax
+    p <- df2 %>%
+      ggplot2::ggplot(ggplot2::aes(x = .data[[var2]], y = mean, fill = .data[[var2]])) +
+      ggplot2::geom_col(color = line_color, 
+               fill = fill_color, 
+               alpha = 0.7,
+               width = 0.8) +
+      ggplot2::geom_errorbar(ggplot2::aes(ymin = mean - se, ymax = mean + se), 
+                   color = line_color, 
+                   width = 0.4, 
+                   size = 0.8) +
+      ggplot2::geom_point(data = data, ggplot2::aes(y = .data[[measure_col]]), 
+                color = point_color, 
+                alpha = 0.6, 
+                size = 2, 
+                position = ggplot2::position_jitter(width = 0.2)) +
+      ggplot2::geom_text(ggplot2::aes(y = mean + se + 0.05 * max(mean + se, na.rm = TRUE), 
+                   label = cld), 
+               color = "black", 
+               size = 4, 
+               fontface = "bold") +
+      ggplot2::facet_wrap(as.formula(paste("~", var1)), scales = "free") +
+      ggplot2::labs(title = paste("Analysis of", measure_col, "by", var2, "and", var1),
+           subtitle = "Non-parametric analysis (Kruskal-Wallis + Dunn test)",
+           x = var2, 
+           y = measure_col) +
+      ggplot2::theme_minimal() +
+      ggplot2::theme(
+        axis.text.x = ggplot2::element_text(angle = 45, hjust = 1),
+        legend.position = "none",
+        strip.text = ggplot2::element_text(size = 12, face = "bold"),
+        plot.title = ggplot2::element_text(size = 14, face = "bold"),
+        plot.subtitle = ggplot2::element_text(size = 12, color = "grey60")
+      )
+    
+    # RETURN NON-PARAMETRIC RESULTS
+    return(list(
+      plot = p,
+      summary = conf_int,
+      kruskal = kruskal_results,
+      dunn = dunn_results,
+      cld = cld_table_nonparametric,
+      test_type = "non-parametric"
+    ))
   }
 }
 
-# Plot curve qGAM version
+
 #========================================================================================================================================
 # STRATEGY: Advanced curve analysis using quantile Generalized Additive Models (qGAM)
 # PURPOSE: Robust analysis of time-course or dose-response data with statistical comparisons
@@ -824,7 +679,11 @@ analyse_curve <- function(df, col_vector,
           # PURPOSE: Two-group comparison for clear interpretation
           df_sub <- .x %>% 
             filter(.data[[grouping_col]] %in% c(control_group, group)) %>%
-            mutate(!!sym(grouping_col) := droplevels(factor(.data[[grouping_col]])))
+            mutate(temp_col = droplevels(factor(.data[[grouping_col]])))
+          
+          # Assign the new column with the correct name
+          df_sub[[grouping_col]] <- df_sub$temp_col
+          df_sub$temp_col <- NULL
           
           tryCatch({
             # COMPARATIVE qGAM MODEL

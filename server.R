@@ -67,8 +67,8 @@ server <- function(input, output, session) {
   # PURPOSE: Safety net for cleanup in case of unexpected disconnections
   cleanup_old_sessions <- function() {
     temp_base <- tempdir()
-    session_dirs <- list.dirs(temp_base, pattern = "fluorcam_session_", 
-                             full.names = TRUE, recursive = FALSE)
+    all_dirs <- list.dirs(temp_base, full.names = TRUE, recursive = FALSE)
+    session_dirs <- all_dirs[grepl("fluorcam_session_", basename(all_dirs))]
     current_time <- Sys.time()
     
     for (dir in session_dirs) {
@@ -731,7 +731,6 @@ server <- function(input, output, session) {
   # PURPOSE: Run analysis only when user clicks "Start Analysis"
   analysis_results <- eventReactive(input$start_analysis, {
     # INPUT VALIDATION
-    # STRATEGY: Comprehensive requirement checking
     req(result_df$data)
     req(input$graph_type)
     req(input$facet_var)
@@ -739,13 +738,25 @@ server <- function(input, output, session) {
     req(input$var1_order)
     req(input$var2_order)
     
+    # CHECK IF ALL REQUIRED COLUMNS EXIST
     if (input$graph_type == "Bar plot") {
+      required_cols <- c(facet_var(), x_var(), VALUE())
+      missing_cols <- setdiff(required_cols, colnames(result_df$data))
+      
+      if (length(missing_cols) > 0) {
+        showNotification(
+          paste("Missing columns:", paste(missing_cols, collapse = ", "),
+                "\nAvailable columns:", paste(colnames(result_df$data), collapse = ", ")),
+          type = "error", duration = 15
+        )
+        return(NULL)
+      }
+      
       # BAR PLOT ANALYSIS
-      # STRATEGY: Delegate to specialized analysis function
-      barplot_results <- analyse_barplot(
+      bar_result <- analyse_barplot(
         data = result_df$data,
         var1 = facet_var(),
-        var2 = x_var(),
+        var2 = x_var(), 
         measure_col = VALUE(),
         var1_order = input$var1_order,
         var2_order = input$var2_order,
@@ -755,11 +766,10 @@ server <- function(input, output, session) {
       )
       
       # STORE RESULTS FOR EXPORT
-      # STRATEGY: Separate storage enables independent export functionality
-      current_plot(barplot_results$plot)
-      current_stats(barplot_results)
+      current_plot(bar_result$plot)
+      current_stats(bar_result)
       
-      return(barplot_results$plot)
+      return(bar_result$plot)
       
     } else if (input$graph_type == "Curve") {
       # CURVE ANALYSIS
@@ -767,7 +777,7 @@ server <- function(input, output, session) {
       req(input$var2)
       req(user_params$selected_params)
       req(input$column)
-      req(input$control_group)  # Control group required for statistical comparisons
+      req(input$control_group)
 
       # COLOR VECTOR PREPARATION
       # STRATEGY: Extract user-selected colors for each group
