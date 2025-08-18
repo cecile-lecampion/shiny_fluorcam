@@ -537,8 +537,8 @@ server <- function(input, output, session) {
     # SHAPIRO-WILK TEST
     # STRATEGY: Group-wise normality testing
     shapiro_df <- result_df$data %>%
-      dplyr::group_by(!!sym(var2), !!sym(var1)) %>%
-      rstatix::shapiro_test(!!sym(MEASURE_COL))
+      dplyr::group_by(.data[[var2]], .data[[var1]]) %>%
+      rstatix::shapiro_test(.data[[MEASURE_COL]])
     
     # INTERPRET RESULTS
     # STRATEGY: Simple yes/no interpretation for users
@@ -591,6 +591,10 @@ server <- function(input, output, session) {
     req(input$column %in% colnames(result_df$data))
     req(input$var1_order)
     req(input$var2_order)
+    
+    # Add this debugging line before calling analyse_barplot() or analyse_curve()
+    cat("Available columns before plotting:", paste(colnames(result_df$data), collapse = ", "), "\n")
+    cat("Fm column exists:", "Fm" %in% colnames(result_df$data), "\n")
     
     if (input$graph_type == "Bar plot") {
       # BAR PLOT ANALYSIS

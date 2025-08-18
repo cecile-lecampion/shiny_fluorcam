@@ -42,7 +42,6 @@ required_packages <- c(
   # STATISTICAL ANALYSIS (4 packages)
   # ===========================================
   "rstatix",                  # Statistical tests - USED: helpers.R (shapiro_test, anova_test, tukey_hsd, etc.)
-  "rcompanion",               # Statistical functions - USED: helpers.R (groupwiseMedian)
   "multcompView",             # Compact letter display - USED: helpers.R (multcompLetters)
   "Rmisc",                    # Summary statistics - USED: helpers.R (summarySE)
   
