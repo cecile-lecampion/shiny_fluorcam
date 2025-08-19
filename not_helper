@@ -1,0 +1,24 @@
+# Define a function to perform Shapiro test
+#========================================================================================================================================
+# STRATEGY: Automatic selection between parametric and non-parametric methods
+# PURPOSE: Appropriate statistical analysis based on data distribution
+# NORMALITY TESTING - BASE R APPROACH
+# STRATEGY: Use split-apply-combine with base R shapiro.test
+# PURPOSE: Maximum compatibility and reliability
+
+shapiro_df <- data %>%
+  group_by(.data[[var2]], .data[[var1]]) %>%
+  group_modify(~ {
+    test_result <- shapiro.test(.x[[measure_col]])
+    tibble(
+      statistic = test_result$statistic,
+      p = test_result$p.value,
+      method = "Shapiro-Wilk"
+    )
+  }) %>%
+  ungroup()
+
+# NORMALITY DECISION
+# STRATEGY: Use helper function for consistent logic
+# PURPOSE: Single decision point for statistical method selection
+flag_normal <- check_normality(shapiro_df)
