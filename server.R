@@ -524,29 +524,17 @@ server <- function(input, output, session) {
   # NORMALITY TEST RESULT (BAR PLOT ONLY)
   # STRATEGY: Real-time normality assessment
   # PURPOSE: Inform users about statistical test appropriateness
-  output$normality_result <- renderText({
-    req(input$start_analysis > 0)  # Only after analysis initiated
-    req(result_df$data, input$graph_type == "Bar plot", input$column)
-    req(input$column %in% colnames(result_df$data))
+  output$normality_text <- renderText({
+    req(analysis_results())
     
-    var1 <- facet_var()
-    var2 <- x_var()
-    MEASURE_COL <- VALUE()
+    # Get the normality result directly
+    normality_message <- analysis_results()$normality
     
-    # SHAPIRO-WILK TEST
-    # STRATEGY: Group-wise normality testing
-    # shapiro_df <- result_df$data %>%
-    #   dplyr::group_by(.data[[var2]], .data[[var1]]) %>%
-    #   rstatix::shapiro_test(.data[[MEASURE_COL]])
-    
-    # INTERPRET RESULTS
-    # STRATEGY: Simple yes/no interpretation for users
-    flag_normal <- check_normality(shapiro_df)
-    if (flag_normal) {
-      "Datas follow a normal law."
-    } else {
-      "Datas don't follow a normal law."
-    }
+    # If you returned just the flag, format the message here
+    normality_flag <- analysis_results()$normality
+    normality_message <- if(normality_flag) "Data follows a normal law." else "Data doesn't follow a normal law."
+    print(normality_flag)
+    return(normality_message)
   })
 
   # SELECTED VALUE DISPLAY
@@ -591,9 +579,6 @@ server <- function(input, output, session) {
     req(input$var1_order)
     req(input$var2_order)
     
-    # Add this debugging line before calling analyse_barplot() or analyse_curve()
-    cat("Available columns before plotting:", paste(colnames(result_df$data), collapse = ", "), "\n")
-    cat("Fm column exists:", "Fm" %in% colnames(result_df$data), "\n")
     
     if (input$graph_type == "Bar plot") {
       # BAR PLOT ANALYSIS

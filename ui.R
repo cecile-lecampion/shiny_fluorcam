@@ -530,7 +530,7 @@ ui <- dashboardPage(
                            column(6,
                              div(class = "info-box",
                                h4("Normality Test"),
-                               verbatimTextOutput("normality_result")
+                               verbatimTextOutput("normality_text")
                              )
                            )
                          )

@@ -186,32 +186,48 @@ check_normality <- function(shapiro_df) {
 # OUTPUT: Dataframe with groups and their significance letters
 
 generate_cld_parametric <- function(tukey_df, var1_col, var2_col) {
-  tukey_df %>%
-    # GROUP BY FACET VARIABLE
-    # STRATEGY: Separate letter assignments for each facet panel
-    # PURPOSE: Each facet gets independent significance groupings
-    group_by(.data[[var1_col]]) %>%
-    summarise(
-      # MULTCOMP LETTER GENERATION
-      # STRATEGY: Use multcompView package for standard letter assignment
-      # PURPOSE: Generate widely-accepted compact letter display
-      cld = list(multcompView::multcompLetters(
-        # CREATE NAMED VECTOR: p-values with group comparison names
-        setNames(p.adj, paste(group1, group2, sep = "-")),
-        Letters = letters  # Use lowercase letters (a, b, c, ...)
-      )$Letters),
-      .groups = 'drop'
-    ) %>%
-    # UNNEST LETTER ASSIGNMENTS
-    # STRATEGY: Convert list-column to long format for merging
-    # PURPOSE: One row per group with assigned letter
-    tidyr::unnest_longer(cld) %>%
-    # RENAME FOR CONSISTENCY
-    # STRATEGY: Use dynamic column names matching input data structure
-    dplyr::mutate("{var2_col}" := names(cld)) %>%
-    dplyr::select(all_of(var1_col), all_of(var2_col), cld)
+  # Step 1: Extract unique values of the grouping variables
+  unique_var1 <- unique(tukey_df[[var1_col]])
+  
+  # Step 2: Process each group separately and combine results
+  result_list <- list()
+  
+  for (group_val in unique_var1) {
+    # Filter data for this group
+    group_data <- tukey_df[tukey_df[[var1_col]] == group_val, ]
+    
+    # Generate letters for this group
+    letters_result <- multcompView::multcompLetters(
+      setNames(group_data$p.adj, paste(group_data$group1, group_data$group2, sep = "-")),
+      Letters = letters
+    )$Letters
+    
+    # Convert to data frame
+    group_result <- data.frame(
+      group_value = group_val,
+      group_var = names(letters_result),
+      cld = unname(letters_result),
+      stringsAsFactors = FALSE
+    )
+    
+    # Add to results list
+    result_list[[length(result_list) + 1]] <- group_result
+  }
+  
+  # Combine all results
+  combined_result <- do.call(rbind, result_list)
+  
+  # Rename columns to match expected names
+  names(combined_result)[1] <- var1_col
+  names(combined_result)[2] <- var2_col
+  
+  # DEBUG: Print final result
+  cat("\nFinal result before returning:\n")
+  print(combined_result)
+  cat("Final column names:", paste(colnames(combined_result), collapse=", "), "\n")
+  
+  return(combined_result)
 }
-
 # Generate CLD values for non-parametric data
 #=======================================================================================================================================
 # STRATEGY: Process Dunn test results into compact letter display format
@@ -316,7 +332,7 @@ analyse_barplot <- function(
       )
     }) %>%
     ungroup()
-
+  
   # NORMALITY DECISION
   # STRATEGY: Use helper function for consistent logic
   # PURPOSE: Single decision point for statistical method selection
@@ -334,17 +350,17 @@ analyse_barplot <- function(
     # STRATEGY: Use summarise for mean ± standard error
     # PURPOSE: Generate values for bar heights and error bars
     my_summary <- data %>%
-      group_by(.data[[var2]], .data[[var1]]) %>%
-      summarise(
-        N = n(),
-        mean_value = mean(.data[[measure_col]], na.rm = TRUE),
-        sd_value = sd(.data[[measure_col]], na.rm = TRUE),
+      dplyr::group_by(.data[[var2]], .data[[var1]]) %>%
+      dplyr::summarise(
+        N = length(get(measure_col)),
+        mean_value = mean(get(measure_col), na.rm = TRUE),
+        sd_value = sd(get(measure_col), na.rm = TRUE),
         se = sd_value / sqrt(N),
         ci_lower = mean_value - se * qt(0.975, df = N - 1),
         ci_upper = mean_value + se * qt(0.975, df = N - 1),
         .groups = 'drop'
       )
-
+   
     # ANOVA TESTING - FORMULA APPROACH
     # STRATEGY: Use formula approach which is more reliable with rstatix
     # PURPOSE: Test for overall differences before post-hoc testing
@@ -379,7 +395,7 @@ analyse_barplot <- function(
     # PURPOSE: Single dataframe for plotting with all needed information
     df2 <- merge(my_summary, cld_table_parametric, by = c(var2, var1), all.x = TRUE)
     names(df2)[names(df2) == "mean_value"] <- measure_col
-
+    
     # PRESERVE FACTOR ORDERING
     # STRATEGY: Ensure user-specified order is maintained after merge
     # PURPOSE: Plot appears as user intended
@@ -389,7 +405,8 @@ analyse_barplot <- function(
     if(!is.null(var2_order)) {
       df2[[var2]] <- factor(df2[[var2]], levels = var2_order)
     }
-
+    print(df2)
+    # DEBUG: Print final df2 structure
     # PLOT CONSTRUCTION (PARAMETRIC)
     # STRATEGY: Layered ggplot with statistical annotations
     # PURPOSE: Professional publication-quality visualization
@@ -472,6 +489,7 @@ analyse_barplot <- function(
       plot = p,
       summary = my_summary,
       shapiro = shapiro_df,
+      normality = flag_normal,
       anova = anova_result,
       tukey = tukey_results,
       cld = cld_table_parametric
@@ -488,14 +506,14 @@ analyse_barplot <- function(
     # STRATEGY: Use modern dplyr with quantile-based confidence intervals
     # PURPOSE: Non-parametric equivalent of mean ± SE
     conf_int <- data %>%
-      group_by(.data[[var2]], .data[[var1]]) %>%
-      summarise(
-        N = n(),
-        Median = median(.data[[measure_col]], na.rm = TRUE),
-        Q1 = quantile(.data[[measure_col]], 0.25, na.rm = TRUE),
-        Q3 = quantile(.data[[measure_col]], 0.75, na.rm = TRUE),
-        Percentile.lower = quantile(.data[[measure_col]], 0.025, na.rm = TRUE),  # 2.5th percentile
-        Percentile.upper = quantile(.data[[measure_col]], 0.975, na.rm = TRUE),  # 97.5th percentile
+      dplyr::group_by(.data[[var2]], .data[[var1]]) %>%
+      dplyr::summarise(
+        N = length(get(measure_col)),
+        Median = median(get(measure_col), na.rm = TRUE),
+        Q1 = quantile(get(measure_col), 0.25, na.rm = TRUE),
+        Q3 = quantile(get(measure_col), 0.75, na.rm = TRUE),
+        Percentile.lower = quantile(get(measure_col), 0.025, na.rm = TRUE),  # 2.5th percentile
+        Percentile.upper = quantile(get(measure_col), 0.975, na.rm = TRUE),  # 97.5th percentile
         .groups = 'drop'
       )
 
@@ -617,6 +635,7 @@ analyse_barplot <- function(
         plot = p,
         summary = conf_int,
         shapiro = shapiro_df,
+        normality = flag_normal,
         kruskal = kruskal_pval,
         dunn = pval_dunn,
         cld = cld_table_nonparametric
