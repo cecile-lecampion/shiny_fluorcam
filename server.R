@@ -123,7 +123,6 @@ server <- function(input, output, session) {
       # PURPOSE: Keep server code clean, enable testing of processing logic
       processed_data <- process_data_files(
         pattern = pattern, 
-        areas = "", 
         var1 = var1, 
         var2 = var2, 
         var3 = var3, 

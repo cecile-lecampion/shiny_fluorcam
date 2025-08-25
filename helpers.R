@@ -8,8 +8,136 @@
 # - Separation of concerns: each function has a single responsibility
 # - Reusable components that can be tested independently
 
+
 # ===========================================
-# SECTION 1: STATISTICAL TESTING FUNCTIONS
+# SECTION 1: DATA PROCESSING FUNCTIONS
+# ===========================================
+# PURPOSE: Handle FluorCam file processing and data preparation
+# STRATEGY: Modular pipeline for file reading, cleaning, and transformation
+
+# Function to process data files
+#========================================================================================================================================
+# STRATEGY: Complete data processing pipeline for FluorCam files
+# PURPOSE: Transform raw .TXT files into analysis-ready dataframe
+# WORKFLOW: File discovery → cleaning → calculation → naming → merging
+# INPUT: File pattern, directory path, and variable naming scheme
+# OUTPUT: Combined dataframe ready for statistical analysis
+
+process_data_files <- function(pattern, var1, var2, var3, dirpath) {
+  # FILE DISCOVERY
+  # STRATEGY: Use pattern matching to find relevant files
+  # PURPOSE: Flexible file selection based on user input
+  files <- list.files(path = dirpath, pattern = pattern, full.names = TRUE)
+  
+  # INNER FUNCTION: FILE CLEANING
+  # STRATEGY: Nested function for single responsibility
+  # PURPOSE: Remove FluorCam header lines and read data
+  remove_first_two_lines <- function(file_name, area) {
+    # READ ALL LINES
+    # STRATEGY: Read entire file first for flexible processing
+    lines <- readLines(file_name)
+    
+    # REMOVE EMPTY LINES
+    # STRATEGY: Clean data by removing blank lines
+    # PURPOSE: Prevent parsing errors from empty rows
+    lines <- lines[lines != ""]
+    
+    # REMOVE HEADER LINES
+    # STRATEGY: FluorCam files have 2-line headers that must be removed
+    # PURPOSE: Leave only the data table for proper parsing
+    if(length(lines) > 2){
+      lines <- lines[-c(1,2)]  # Remove first two lines
+    } else {
+      # ERROR HANDLING
+      # STRATEGY: Informative error message for insufficient data
+      stop("Le fichier ne contient pas assez de lignes.")
+    }
+    
+    # PARSE DATA TABLE
+    # STRATEGY: Use read.table with tab separation (FluorCam standard)
+    # PURPOSE: Convert cleaned text to structured dataframe
+    data <- read.table(text = lines, sep = "\t", header = TRUE)
+    return(data)
+  }
+  
+  # INNER FUNCTION: Fv/Fm CALCULATION
+  # STRATEGY: Automatic calculation of key fluorescence parameter
+  # PURPOSE: Fv/Fm is standard measure of photosynthetic efficiency
+  # FORMULA: Fv/Fm = (Fm - F0) / Fm = Fv / Fm
+  compute_Fv_Fm <- function(df) {
+    df$Fv_Fm <- df$Fv / df$Fm
+    return(df)
+  }
+  
+  # INNER FUNCTION: NAME COLUMN ADDITION
+  # STRATEGY: Add filename as identifier column
+  # PURPOSE: Track data source for later variable extraction
+  add_name_column <- function(df, name) {
+    df$Name <- name
+    return(df)
+  }
+  
+  # INNER FUNCTION: VARIABLE EXTRACTION
+  # STRATEGY: Parse filename into separate variable columns
+  # PURPOSE: Extract experimental variables from systematic naming
+  # METHOD: Split on underscore separator (VAR1_VAR2_VAR3.TXT)
+  divide_name <- function(df) {
+    df <- tidyr::separate(
+      data = df, 
+      col = "Name", 
+      into = c(var1, var2, var3),  # User-defined variable names
+      sep = "_",                   # Underscore separator
+      remove = TRUE                # Remove original Name column
+    )
+    return(df)
+  }
+  
+  # MAIN PROCESSING PIPELINE
+  # STRATEGY: Apply processing functions to all files
+  
+  # STEP 1: CLEAN ALL FILES
+  # STRATEGY: lapply for efficient list processing
+  # PURPOSE: Apply cleaning function to each file
+  Liste <- lapply(files, remove_first_two_lines, area = "")
+  # CREATE NAMED LIST
+  # STRATEGY: Use filenames (without extension) as list names
+  # PURPOSE: Maintain file identity through processing
+  names(Liste) <- tools::file_path_sans_ext(basename(files))
+  
+  # STEP 2: TRANSPOSE DATA
+  # STRATEGY: FluorCam data comes with parameters as rows, need columns
+  # PURPOSE: Transform from parameter-per-row to parameter-per-column
+  # METHOD: data.table::transpose with X column as names
+  Liste <- lapply(Liste, data.table::transpose, make.names = "X")
+  
+  # STEP 3: CALCULATE Fv/Fm
+  # STRATEGY: Apply calculation to all datasets
+  # PURPOSE: Add derived parameter to all files
+  Liste <- lapply(Liste, compute_Fv_Fm)
+  
+  # STEP 4: ADD FILENAME IDENTIFIERS
+  # STRATEGY: Use names() to apply filename to each dataset
+  # PURPOSE: Prepare for variable extraction
+  Liste <- lapply(names(Liste), function(name) {
+    add_name_column(Liste[[name]], name)
+  })
+  
+  # STEP 5: EXTRACT VARIABLES FROM FILENAMES
+  # STRATEGY: Parse systematic filenames into experimental variables
+  # PURPOSE: Create grouping variables for statistical analysis
+  Liste <- lapply(Liste, divide_name)
+  
+  # STEP 6: COMBINE ALL DATA
+  # STRATEGY: Row-bind all processed datasets
+  # PURPOSE: Create single analysis-ready dataframe
+  df <- do.call(rbind, Liste)
+  
+  
+  return(df)
+}
+
+# ===========================================
+# SECTION 2: STATISTICAL TESTING FUNCTIONS
 # ===========================================
 # PURPOSE: Provide robust statistical analysis capabilities
 # STRATEGY: Separate functions for different statistical procedures
@@ -25,7 +153,7 @@ check_normality <- function(shapiro_df) {
   # STRATEGY: Conservative approach to normality testing
   # PURPOSE: Assume normality unless proven otherwise
   flag_normal <- TRUE
-
+  
   # LOOP THROUGH ALL GROUP RESULTS
   # STRATEGY: Break on first non-normal group for efficiency
   # PURPOSE: Single failure invalidates parametric assumptions
@@ -42,8 +170,9 @@ check_normality <- function(shapiro_df) {
   return(flag_normal)
 }
 
+
 # ===========================================
-# SECTION 2: COMPACT LETTER DISPLAY FUNCTIONS
+# SECTION 3: COMPACT LETTER DISPLAY FUNCTIONS
 # ===========================================
 # PURPOSE: Generate letter-based significance groupings for visualization
 # STRATEGY: Separate functions for parametric vs non-parametric results
@@ -80,7 +209,7 @@ generate_cld_parametric <- function(tukey_df, var1_col, var2_col) {
     # RENAME FOR CONSISTENCY
     # STRATEGY: Use dynamic column names matching input data structure
     dplyr::mutate("{var2_col}" := names(cld)) %>%
-    dplyr::select(.data[[var1_col]], .data[[var2_col]], cld)
+    dplyr::select(all_of(var1_col), all_of(var2_col), cld)
 }
 
 # Generate CLD values for non-parametric data
@@ -105,193 +234,9 @@ generate_cld_nonparametric <- function(dunn_df, var1_col, var2_col) {
     # UNNEST AND RESTRUCTURE - use modern syntax consistently
     tidyr::unnest_longer(cld) %>%
     dplyr::mutate(!!var2_col := names(cld)) %>%
-    dplyr::select(.data[[var1_col]], .data[[var2_col]], cld)  # Select final columns
+    dplyr::select(all_of(var1_col), all_of(var2_col), cld) # Select final columns
 }
 
-# Define a function to perform Dunn test
-#========================================================================================================================================
-# STRATEGY: Wrapper function for Dunn post-hoc testing
-# PURPOSE: Standardized non-parametric multiple comparisons
-# METHOD: Benjamini-Hochberg correction for family-wise error rate
-# INPUT: Data frame, grouping variables, and measure column
-
-test_dunn <- function(df_data, var1, var2, MEASURE_COL) {
-  # DUNN TEST EXECUTION - FORMULA APPROACH
-  # STRATEGY: Group-wise Dunn testing with BH correction using formula
-  # PURPOSE: Control false discovery rate in multiple comparisons
-
-  # Create temporary column for rstatix compatibility
-  df_temp <- df_data
-  df_temp$temp_measure <- df_temp[[MEASURE_COL]]
-
-  pval <- df_temp %>%
-    group_by(.data[[var1]]) %>%  # Separate tests for each facet
-    rstatix::dunn_test(
-      temp_measure ~ .data[[var2]],  # Use temporary column in formula
-      p.adjust.method = "BH"  # Benjamini-Hochberg correction
-    ) %>%
-    as.data.frame()  # Convert to standard dataframe for compatibility
-  return(pval)
-}
-
-# ===========================================
-# SECTION 3: DATA PROCESSING FUNCTIONS
-# ===========================================
-# PURPOSE: Handle FluorCam file processing and data preparation
-# STRATEGY: Modular pipeline for file reading, cleaning, and transformation
-
-# Function to extract the "area" from the file header
-#========================================================================================================================================
-# STRATEGY: Parse FluorCam file headers for metadata extraction
-# PURPOSE: Extract area information for potential future use
-# METHOD: Read first few lines and pattern match for "Area:" field
-# NOTE: Currently not used in main pipeline but available for expansion
-
-extract_area_from_header <- function(file_name) {
-  # READ HEADER LINES ONLY
-  # STRATEGY: Efficient reading - only first 5 lines needed
-  # PURPOSE: Avoid loading entire file just for header info
-  lines <- readLines(file_name, n = 5) # Adjust n if the header is longer
-
-  # PATTERN MATCHING
-  # STRATEGY: Use grep for flexible pattern matching
-  # PURPOSE: Find line containing area information
-  area_line <- grep("Area:", lines, value = TRUE)
-
-  if (length(area_line) > 0) {
-    # EXTRACT VALUE
-    # STRATEGY: Remove everything before "Area:" and whitespace
-    # PURPOSE: Clean extraction of numerical area value
-    gsub(".*Area:\\s*", "", area_line)
-  } else {
-    # GRACEFUL FAILURE
-    # STRATEGY: Return NA instead of error if area not found
-    # PURPOSE: Allow processing to continue without area information
-    return(NA)
-  }
-}
-
-# Function to process data files
-#========================================================================================================================================
-# STRATEGY: Complete data processing pipeline for FluorCam files
-# PURPOSE: Transform raw .TXT files into analysis-ready dataframe
-# WORKFLOW: File discovery → cleaning → calculation → naming → merging
-# INPUT: File pattern, directory path, and variable naming scheme
-# OUTPUT: Combined dataframe ready for statistical analysis
-
-process_data_files <- function(pattern, areas, var1, var2, var3, dirpath) {
-  # FILE DISCOVERY
-  # STRATEGY: Use pattern matching to find relevant files
-  # PURPOSE: Flexible file selection based on user input
-  files <- list.files(path = dirpath, pattern = pattern, full.names = TRUE)
-  print(paste("Files found:", files))  # Debug output for troubleshooting
-
-  # INNER FUNCTION: FILE CLEANING
-  # STRATEGY: Nested function for single responsibility
-  # PURPOSE: Remove FluorCam header lines and read data
-  remove_first_two_lines <- function(file_name, area) {
-    # READ ALL LINES
-    # STRATEGY: Read entire file first for flexible processing
-    lines <- readLines(file_name)
-
-    # REMOVE EMPTY LINES
-    # STRATEGY: Clean data by removing blank lines
-    # PURPOSE: Prevent parsing errors from empty rows
-    lines <- lines[lines != ""]
-
-    # REMOVE HEADER LINES
-    # STRATEGY: FluorCam files have 2-line headers that must be removed
-    # PURPOSE: Leave only the data table for proper parsing
-    if(length(lines) > 2){
-      lines <- lines[-c(1,2)]  # Remove first two lines
-    } else {
-      # ERROR HANDLING
-      # STRATEGY: Informative error message for insufficient data
-      stop("Le fichier ne contient pas assez de lignes.")
-    }
-
-    # PARSE DATA TABLE
-    # STRATEGY: Use read.table with tab separation (FluorCam standard)
-    # PURPOSE: Convert cleaned text to structured dataframe
-    data <- read.table(text = lines, sep = "\t", header = TRUE)
-    return(data)
-  }
-
-  # INNER FUNCTION: Fv/Fm CALCULATION
-  # STRATEGY: Automatic calculation of key fluorescence parameter
-  # PURPOSE: Fv/Fm is standard measure of photosynthetic efficiency
-  # FORMULA: Fv/Fm = (Fm - F0) / Fm = Fv / Fm
-  compute_Fv_Fm <- function(df) {
-    df$Fv_Fm <- df$Fv / df$Fm
-    return(df)
-  }
-
-  # INNER FUNCTION: NAME COLUMN ADDITION
-  # STRATEGY: Add filename as identifier column
-  # PURPOSE: Track data source for later variable extraction
-  add_name_column <- function(df, name) {
-    df$Name <- name
-    return(df)
-  }
-
-  # INNER FUNCTION: VARIABLE EXTRACTION
-  # STRATEGY: Parse filename into separate variable columns
-  # PURPOSE: Extract experimental variables from systematic naming
-  # METHOD: Split on underscore separator (VAR1_VAR2_VAR3.TXT)
-  divide_name <- function(df) {
-    df <- tidyr::separate(
-      data = df, 
-      col = "Name", 
-      into = c(var1, var2, var3),  # User-defined variable names
-      sep = "_",                   # Underscore separator
-      remove = TRUE                # Remove original Name column
-    )
-    return(df)
-  }
-
-  # MAIN PROCESSING PIPELINE
-  # STRATEGY: Apply processing functions to all files
-
-  # STEP 1: CLEAN ALL FILES
-  # STRATEGY: lapply for efficient list processing
-  # PURPOSE: Apply cleaning function to each file
-  Liste <- lapply(files, remove_first_two_lines, area = "")
-  # CREATE NAMED LIST
-  # STRATEGY: Use filenames (without extension) as list names
-  # PURPOSE: Maintain file identity through processing
-  names(Liste) <- tools::file_path_sans_ext(basename(files))
-
-  # STEP 2: TRANSPOSE DATA
-  # STRATEGY: FluorCam data comes with parameters as rows, need columns
-  # PURPOSE: Transform from parameter-per-row to parameter-per-column
-  # METHOD: data.table::transpose with X column as names
-  Liste <- lapply(Liste, data.table::transpose, make.names = "X")
-
-  # STEP 3: CALCULATE Fv/Fm
-  # STRATEGY: Apply calculation to all datasets
-  # PURPOSE: Add derived parameter to all files
-  Liste <- lapply(Liste, compute_Fv_Fm)
-
-  # STEP 4: ADD FILENAME IDENTIFIERS
-  # STRATEGY: Use names() to apply filename to each dataset
-  # PURPOSE: Prepare for variable extraction
-  Liste <- lapply(names(Liste), function(name) {
-    add_name_column(Liste[[name]], name)
-  })
-
-  # STEP 5: EXTRACT VARIABLES FROM FILENAMES
-  # STRATEGY: Parse systematic filenames into experimental variables
-  # PURPOSE: Create grouping variables for statistical analysis
-  Liste <- lapply(Liste, divide_name)
-
-  # STEP 6: COMBINE ALL DATA
-  # STRATEGY: Row-bind all processed datasets
-  # PURPOSE: Create single analysis-ready dataframe
-  df <- do.call(rbind, Liste)
-
-
-  return(df)
-}
 
 # ===========================================
 # SECTION 4: VISUALIZATION FUNCTIONS
@@ -309,9 +254,9 @@ process_data_files <- function(pattern, areas, var1, var2, var3, dirpath) {
 
 analyse_barplot <- function(
   data,
-  var1, var2, measure_col, 
-  var1_order = NULL, var2_order = NULL,
-  fill_color = "ivory1", line_color = "darkgrey", point_color = "darkgreen"
+    var1, var2, measure_col, 
+    var1_order = NULL, var2_order = NULL,
+    fill_color = "ivory1", line_color = "darkgrey", point_color = "darkgreen"
 ) {
 
   # ===========================================
@@ -357,20 +302,9 @@ analyse_barplot <- function(
     data[[var2]] <- as.factor(data[[var2]])
   }
 
-  # ===========================================
-  # STATISTICAL TESTING SECTION
-  # ===========================================
-  # STRATEGY: Automatic selection between parametric and non-parametric methods
-  # PURPOSE: Appropriate statistical analysis based on data distribution
-  cat("=== DEBUG: Before normality testing ===\n")
-  cat("Data dimensions:", dim(data), "\n")
-  cat("measure_col:", measure_col, "\n")
-  cat("Fm column exists:", measure_col %in% colnames(data), "\n")
-
   # NORMALITY TESTING - BASE R APPROACH
   # STRATEGY: Use split-apply-combine with base R shapiro.test
   # PURPOSE: Maximum compatibility and reliability
-
   shapiro_df <- data %>%
     group_by(.data[[var2]], .data[[var1]]) %>%
     group_modify(~ {
@@ -388,13 +322,14 @@ analyse_barplot <- function(
   # PURPOSE: Single decision point for statistical method selection
   flag_normal <- check_normality(shapiro_df)
 
-  # ===========================================
-  # PARAMETRIC ANALYSIS BRANCH
-  # ===========================================
-  # STRATEGY: Full parametric pipeline with ANOVA and Tukey HSD
-  # PURPOSE: When normality assumptions are met
-
   if (flag_normal) {
+    # ===========================================
+    # PARAMETRIC ANALYSIS BRANCH
+    # ===========================================
+    # STRATEGY: Full parametric pipeline with ANOVA and Tukey HSD
+    # PURPOSE: When normality assumptions are met
+
+
     # SUMMARY STATISTICS
     # STRATEGY: Use summarise for mean ± standard error
     # PURPOSE: Generate values for bar heights and error bars
@@ -408,30 +343,31 @@ analyse_barplot <- function(
         ci_lower = mean_value - se * qt(0.975, df = N - 1),
         ci_upper = mean_value + se * qt(0.975, df = N - 1),
         .groups = 'drop'
-      ) 
-    # Rename the mean column to match expected name
-    names(my_summary)[names(my_summary) == "mean_value"] <- measure_col
+      )
 
     # ANOVA TESTING - FORMULA APPROACH
     # STRATEGY: Use formula approach which is more reliable with rstatix
     # PURPOSE: Test for overall differences before post-hoc testing
 
-    # Create a temporary column with a fixed name for rstatix
-    data_temp <- data
-    data_temp$temp_measure <- data_temp[[measure_col]]
+    # generate dynamic formula for anova_test
+    formule <- as.formula(paste(measure_col, "~", var2))
 
-    anova_result <- data_temp %>%
+    # Group by var1 and pass the formula to anova_test
+    anova_result <- data %>%
       group_by(.data[[var1]]) %>%
-      rstatix::anova_test(temp_measure ~ .data[[var2]]) %>%
-      select(-term)  # Remove the 'term' column that rstatix adds
+      rstatix::anova_test(formule)
 
     # TUKEY POST-HOC TESTING - FORMULA APPROACH
     # STRATEGY: Use formula approach for rstatix compatibility
     # PURPOSE: Identify which specific groups differ
 
-    tukey_results <- data_temp %>%
+    # generate dynamic formula for Tukey HSD
+    formule <- as.formula(paste(measure_col, "~", var2))
+
+    # Group by var1 and pass the formula to tukey_hsd
+    tukey_results <- data %>%
       group_by(.data[[var1]]) %>%
-      rstatix::tukey_hsd(temp_measure ~ .data[[var2]])
+      rstatix::tukey_hsd(formule)
 
     # COMPACT LETTER DISPLAY
     # STRATEGY: Convert p-values to letter annotations
@@ -442,6 +378,7 @@ analyse_barplot <- function(
     # STRATEGY: Combine statistical results with summary data
     # PURPOSE: Single dataframe for plotting with all needed information
     df2 <- merge(my_summary, cld_table_parametric, by = c(var2, var1), all.x = TRUE)
+    names(df2)[names(df2) == "mean_value"] <- measure_col
 
     # PRESERVE FACTOR ORDERING
     # STRATEGY: Ensure user-specified order is maintained after merge
@@ -488,17 +425,18 @@ analyse_barplot <- function(
       # STRATEGY: Standard error bars from summary statistics
       # PURPOSE: Show uncertainty in mean estimates
       geom_segment(aes(x = .data[[var2]], xend = .data[[var2]], 
-                       y = pmax(0, .data[[measure_col]] - ci), 
-                       yend = .data[[measure_col]] + ci), 
+                       y = pmax(0, ci_lower), 
+                       yend = ci_upper), 
                    color = "black") +
 
       # SIGNIFICANCE LETTERS
       # STRATEGY: Text annotations above bars
       # PURPOSE: Clear indication of statistical groupings
-      geom_text(aes(x = .data[[var2]], 
-                    y = .data[[measure_col]] + (0.15 * max(df2[[measure_col]], na.rm = TRUE)), 
-                    label = cld), 
-                size = 3, inherit.aes = TRUE) +
+      geom_text(
+                aes(x = .data[[var2]], y = ci_upper + (0.15 * ci_upper), label = cld),
+                na.rm = TRUE,
+                size = 3,
+                inherit.aes = TRUE) +
 
       # THEME AND STYLING
       # STRATEGY: Clean, professional theme
@@ -565,13 +503,12 @@ analyse_barplot <- function(
     # STRATEGY: Non-parametric equivalent of ANOVA
     # PURPOSE: Test for overall differences between groups
 
-    # Use the same temporary column approach
-    data_temp <- data
-    data_temp$temp_measure <- data_temp[[measure_col]]
+    # generate dynamic formula for anova_test
+    formule <- as.formula(paste(measure_col, "~", var2))
 
-    kruskal_pval <- data_temp %>%
+    kruskal_pval <- data %>%
       group_by(.data[[var1]]) %>%
-      rstatix::kruskal_test(temp_measure ~ .data[[var2]]) %>%
+      rstatix::kruskal_test(formule) %>%
       dplyr::select(.data[[var1]], p)
 
     # SIGNIFICANCE CHECK
@@ -583,7 +520,16 @@ analyse_barplot <- function(
       # DUNN POST-HOC TESTING
       # STRATEGY: Non-parametric pairwise comparison
       # PURPOSE: Identify which specific groups differ
-      pval_dunn <- test_dunn(data, var1, var2, measure_col)
+      # generate dynamic formula for anova_test
+      formule <- as.formula(paste(measure_col, "~", var2))
+
+      pval_dunn <- data %>%
+        group_by(.data[[var1]]) %>%  # Separate tests for each facet
+        rstatix::dunn_test((formule),
+          p.adjust.method = "BH"  # Benjamini-Hochberg correction
+        ) %>%
+        as.data.frame()  # Convert to standard dataframe for compatibility
+
 
       # COMPACT LETTER DISPLAY (NON-PARAMETRIC)
       # STRATEGY: Generate letters from Dunn test results
@@ -591,21 +537,38 @@ analyse_barplot <- function(
       cld_table_nonparametric <- generate_cld_nonparametric(pval_dunn, var1, var2)
 
       # MERGE AND PREPARE PLOTTING DATA
-      df2 <- merge(conf_int, cld_table_nonparametric, by.x = c(var2, var1), by.y = c(var2, var1))
-      df2[[var1]] <- factor(df2[[var1]], levels = var1_order)
-      df2[[var2]] <- factor(df2[[var2]], levels = var2_order)
+      df2 <- merge(conf_int, cld_table_nonparametric, by = c(var2, var1), all.x = TRUE)
+      names(df2)[names(df2) == "Median"] <- measure_col
+
+      # PRESERVE FACTOR ORDERING
+      # STRATEGY: Ensure user-specified order is maintained after merge
+      # PURPOSE: Plot appears as user intended
+      if(!is.null(var1_order)) {
+        df2[[var1]] <- factor(df2[[var1]], levels = var1_order)
+      }
+      if(!is.null(var2_order)) {
+        df2[[var2]] <- factor(df2[[var2]], levels = var2_order)
+      }
 
       # PLOT CONSTRUCTION (NON-PARAMETRIC)
       # STRATEGY: Similar to parametric but using medians and percentile CIs
       # PURPOSE: Appropriate visualization for non-parametric analysis
       p <- df2 %>%
-        ggplot(aes(x = .data[[var2]], y = Median, fill = .data[[var2]])) +
+        ggplot(aes(x = .data[[var2]], y = .data[[measure_col]], fill = .data[[var2]])) +
 
         # MEDIAN BARS
         # STRATEGY: Show medians instead of means
         # PURPOSE: Appropriate central tendency for non-normal data
         geom_col(color = line_color, width = 0.6, position = position_dodge2(padding = 0.05)) +
+
+        # FILL COLOR SCALE
+        # STRATEGY: Manual color specification for consistency
+        # PURPOSE: User control over plot appearance
         scale_fill_manual(values = rep(fill_color, length(unique(df2[[var2]])))) +
+
+        # Y-AXIS SCALING
+        # STRATEGY: Start at zero with small expansion for CLD labels
+        # PURPOSE: Honest representation with space for annotations
         scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
 
         # DATA POINTS OVERLAY
@@ -627,7 +590,7 @@ analyse_barplot <- function(
         # SIGNIFICANCE LETTERS
         # STRATEGY: Position relative to confidence intervals
         # PURPOSE: Clear statistical grouping indication
-        geom_text(aes(x = .data[[var2]], y = Percentile.upper + (0.15 * Median), label = cld), 
+        geom_text(aes(x = .data[[var2]], y = Percentile.upper + (0.15 * Percentile.upper), label = cld), 
                   size = 3, inherit.aes = TRUE) +
 
         # THEME (SAME AS PARAMETRIC)
@@ -685,9 +648,9 @@ analyse_curve <- function(df, col_vector,
                           k = 5,  # Smoothing parameter for GAM
                           user_params = list()) {
   
-# ===========================================
-# NOTE: All required packages loaded via global.R
-# ===========================================
+  # ===========================================
+  # NOTE: All required packages loaded via global.R
+  # ===========================================
   
   # ===========================================
   # AXIS LABEL PREPARATION SECTION
@@ -1006,7 +969,7 @@ analyse_curve <- function(df, col_vector,
       # STRATEGY: Use dynamically generated labels
       # PURPOSE: Informative, context-specific labels
       labs(x = x_axis_label, y = y_axis_label)
-  
+    
     # ===========================================
     # STATISTICAL ANNOTATION SECTION
     # ===========================================
@@ -1067,3 +1030,5 @@ analyse_curve <- function(df, col_vector,
     stop(paste("Error in qGAM curve analysis:", e$message))
   })
 }
+
+
