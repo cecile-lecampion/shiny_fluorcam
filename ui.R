@@ -394,10 +394,8 @@ ui <- dashboardPage(
                                   value = "statistical_results", 
                                   placeholder = "Enter filename"),
                         br(),
-                        actionButton("export_stats", 
-                                     "Export Statistical Data (.zip)", 
-                                     icon = icon("file-archive"),
-                                     class = "btn-success btn-block"),
+                        downloadButton("download_stats", "Download Statistical Data", 
+                                       class = "btn-primary", icon = icon("download")),
                         
                         hr(),
                         
@@ -454,9 +452,8 @@ ui <- dashboardPage(
                         br(),
                         
                         # EXPORT ACTION
-                        actionButton("export_plot", "Export Plot", 
-                                     icon = icon("image"),
-                                     class = "btn-primary btn-block")
+                        downloadButton("download_plot", "Download Plot", 
+                                       class = "btn-success", icon = icon("image"))
                     )
                 )
             )

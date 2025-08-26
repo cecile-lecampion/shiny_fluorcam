@@ -684,197 +684,179 @@ server <- function(input, output, session) {
   # ===========================================
   # SECTION 13: EXPORT FUNCTIONALITY
   # ===========================================
-  # STRATEGY: Professional export capabilities for data and plots
-  # PURPOSE: Enable users to save and share analysis results
-  
+  # STRATEGY: Professional export capabilities with downloadHandler
+  # PURPOSE: Enable users to save and share analysis results locally
+
   # 13.1 STATISTICAL DATA EXPORT
-  # STRATEGY: Multiple text files in zip archive for universal compatibility
-  # PURPOSE: Organized, readable statistical output
-  observeEvent(input$export_stats, {
-    req(current_stats())  # Require completed analysis
-    
-    zip_filename <- paste0(input$stats_filename, ".zip")
-    
-    tryCatch({
-      temp_dir <- tempdir()
-      file_list <- c()
-      stats_data <- current_stats()  # Get stored statistical results
+  # STRATEGY: Multiple text files in zip archive using downloadHandler
+  # PURPOSE: Organized, readable statistical output accessible on client side
+  output$download_stats <- downloadHandler(
+    filename = function() {
+      paste0(input$stats_filename, ".zip")
+    },
+    content = function(file) {
+      req(current_stats())  # Require completed analysis
       
-      if (input$graph_type == "Bar plot") {
-        # BAR PLOT STATISTICAL EXPORTS
-        # STRATEGY: Separate file for each type of statistical result
-        # PURPOSE: Organized output that's easy to navigate
+      tryCatch({
+        # Create temporary directory for files
+        temp_dir <- tempdir()
+        file_list <- c()
+        stats_data <- current_stats()  # Get stored statistical results
         
-        if (!is.null(stats_data$summary)) {
-          summary_file <- file.path(temp_dir, "summary_statistics.txt")
-          write.table(stats_data$summary, file = summary_file, 
-                     sep = "\t", row.names = FALSE, quote = FALSE)
-          file_list <- c(file_list, summary_file)
+        if (input$graph_type == "Bar plot") {
+          # BAR PLOT STATISTICAL EXPORTS
+          # STRATEGY: Separate file for each type of statistical result
+          # PURPOSE: Organized output that's easy to navigate
+          
+          if (!is.null(stats_data$summary)) {
+            summary_file <- file.path(temp_dir, "summary_statistics.txt")
+            write.table(stats_data$summary, file = summary_file, 
+                       sep = "\t", row.names = FALSE, quote = FALSE)
+            file_list <- c(file_list, summary_file)
+          }
+          
+          if (!is.null(stats_data$shapiro)) {
+            shapiro_file <- file.path(temp_dir, "shapiro_normality_test.txt")
+            write.table(stats_data$shapiro, file = shapiro_file, 
+                       sep = "\t", row.names = FALSE, quote = FALSE)
+            file_list <- c(file_list, shapiro_file)
+          }
+          
+          if (!is.null(stats_data$anova)) {
+            anova_file <- file.path(temp_dir, "anova_results.txt")
+            write.table(stats_data$anova, file = anova_file, 
+                       sep = "\t", row.names = FALSE, quote = FALSE)
+            file_list <- c(file_list, anova_file)
+          }
+          
+          if (!is.null(stats_data$tukey)) {
+            tukey_file <- file.path(temp_dir, "tukey_hsd_test.txt")
+            write.table(stats_data$tukey, file = tukey_file, 
+                       sep = "\t", row.names = FALSE, quote = FALSE)
+            file_list <- c(file_list, tukey_file)
+          }
+          
+          if (!is.null(stats_data$kruskal)) {
+            kruskal_file <- file.path(temp_dir, "kruskal_wallis_test.txt")
+            write.table(stats_data$kruskal, file = kruskal_file, 
+                       sep = "\t", row.names = FALSE, quote = FALSE)
+            file_list <- c(file_list, kruskal_file)
+          }
+          
+          if (!is.null(stats_data$dunn)) {
+            dunn_file <- file.path(temp_dir, "dunn_post_hoc_test.txt")
+            write.table(stats_data$dunn, file = dunn_file, 
+                       sep = "\t", row.names = FALSE, quote = FALSE)
+            file_list <- c(file_list, dunn_file)
+          }
+          
+          if (!is.null(stats_data$cld)) {
+            cld_file <- file.path(temp_dir, "compact_letter_display.txt")
+            write.table(stats_data$cld, file = cld_file, 
+                       sep = "\t", row.names = FALSE, quote = FALSE)
+            file_list <- c(file_list, cld_file)
+          }
+          
+        } else if (input$graph_type == "Curve") {
+          # CURVE ANALYSIS STATISTICAL EXPORTS
+          # STRATEGY: Export qGAM predictions and statistical test results
+          
+          if (!is.null(stats_data$qgam_predictions)) {
+            qgam_file <- file.path(temp_dir, "qgam_model_predictions.txt")
+            write.table(stats_data$qgam_predictions, file = qgam_file, 
+                       sep = "\t", row.names = FALSE, quote = FALSE)
+            file_list <- c(file_list, qgam_file)
+          }
+          
+          if (!is.null(stats_data$statistical_results) && nrow(stats_data$statistical_results) > 0) {
+            stats_file <- file.path(temp_dir, "curve_statistical_tests.txt")
+            write.table(stats_data$statistical_results, file = stats_file, 
+                       sep = "\t", row.names = FALSE, quote = FALSE)
+            file_list <- c(file_list, stats_file)
+          }
+          
+          if (!is.null(stats_data$median_points)) {
+            median_file <- file.path(temp_dir, "median_data_points.txt")
+            write.table(stats_data$median_points, file = median_file, 
+                       sep = "\t", row.names = FALSE, quote = FALSE)
+            file_list <- c(file_list, median_file)
+          }
         }
         
-        if (!is.null(stats_data$shapiro)) {
-          shapiro_file <- file.path(temp_dir, "shapiro_normality_test.txt")
-          write.table(stats_data$shapiro, file = shapiro_file, 
-                     sep = "\t", row.names = FALSE, quote = FALSE)
-          file_list <- c(file_list, shapiro_file)
-        }
-        
-        if (!is.null(stats_data$anova)) {
-          anova_file <- file.path(temp_dir, "anova_results.txt")
-          write.table(stats_data$anova, file = anova_file, 
-                     sep = "\t", row.names = FALSE, quote = FALSE)
-          file_list <- c(file_list, anova_file)
-        }
-        
-        if (!is.null(stats_data$tukey)) {
-          tukey_file <- file.path(temp_dir, "tukey_hsd_test.txt")
-          write.table(stats_data$tukey, file = tukey_file, 
-                     sep = "\t", row.names = FALSE, quote = FALSE)
-          file_list <- c(file_list, tukey_file)
-        }
-        
-        if (!is.null(stats_data$kruskal)) {
-          kruskal_file <- file.path(temp_dir, "kruskal_wallis_test.txt")
-          write.table(stats_data$kruskal, file = kruskal_file, 
-                     sep = "\t", row.names = FALSE, quote = FALSE)
-          file_list <- c(file_list, kruskal_file)
-        }
-        
-        if (!is.null(stats_data$dunn)) {
-          dunn_file <- file.path(temp_dir, "dunn_post_hoc_test.txt")
-          write.table(stats_data$dunn, file = dunn_file, 
-                     sep = "\t", row.names = FALSE, quote = FALSE)
-          file_list <- c(file_list, dunn_file)
-        }
-        
-        if (!is.null(stats_data$cld)) {
-          cld_file <- file.path(temp_dir, "compact_letter_display.txt")
-          write.table(stats_data$cld, file = cld_file, 
-                     sep = "\t", row.names = FALSE, quote = FALSE)
-          file_list <- c(file_list, cld_file)
-        }
-        
-      } else if (input$graph_type == "Curve") {
-        # CURVE ANALYSIS STATISTICAL EXPORTS
-        # STRATEGY: Export qGAM predictions and statistical test results
-        
-        if (!is.null(stats_data$qgam_predictions)) {
-          qgam_file <- file.path(temp_dir, "qgam_model_predictions.txt")
-          write.table(stats_data$qgam_predictions, file = qgam_file, 
-                     sep = "\t", row.names = FALSE, quote = FALSE)
-          file_list <- c(file_list, qgam_file)
-        }
-        
-        if (!is.null(stats_data$statistical_results) && nrow(stats_data$statistical_results) > 0) {
-          stats_file <- file.path(temp_dir, "curve_statistical_tests.txt")
-          write.table(stats_data$statistical_results, file = stats_file, 
-                     sep = "\t", row.names = FALSE, quote = FALSE)
-          file_list <- c(file_list, stats_file)
-        }
-        
-        if (!is.null(stats_data$median_points)) {
-          median_file <- file.path(temp_dir, "median_data_points.txt")
-          write.table(stats_data$median_points, file = median_file, 
-                     sep = "\t", row.names = FALSE, quote = FALSE)
-          file_list <- c(file_list, median_file)
-        }
-      }
-      
-      # ANALYSIS PARAMETERS SUMMARY
-      # STRATEGY: Include analysis settings for reproducibility
-      # PURPOSE: Document how analysis was performed
-      params_file <- file.path(temp_dir, "analysis_parameters.txt")
-      params_info <- data.frame(
-        Parameter = c("Analysis Type", "Parameter Column", "Grouping Variable", "Facet Variable", 
-                     if(input$graph_type == "Curve") c("Control Group", "Time Unit") else NULL),
-        Value = c(input$graph_type, 
-                 if(input$graph_type == "Bar plot") input$column else paste(input$column, collapse = ", "),
-                 input$var1, input$facet_var,
-                 if(input$graph_type == "Curve") c(input$control_group %||% "None", 
-                                                  user_params$unit %||% "Not specified") else NULL),
-        stringsAsFactors = FALSE
-      )
-      write.table(params_info, file = params_file, 
-                 sep = "\t", row.names = FALSE, quote = FALSE)
-      file_list <- c(file_list, params_file)
-      
-      # ZIP ARCHIVE CREATION
-      # STRATEGY: Temporary directory manipulation for clean zip structure
-      # PURPOSE: Create zip with just filenames, not full paths
-      if (length(file_list) > 0) {
-        current_wd <- getwd()
-        setwd(temp_dir)
-        zip(zipfile = file.path(current_wd, zip_filename), 
-            files = basename(file_list))
-        setwd(current_wd)
-        
-        showNotification(
-          paste("Statistical data exported successfully as", zip_filename, "with", length(file_list), "files!"), 
-          type = "message", duration = 5
+        # ANALYSIS PARAMETERS SUMMARY
+        # STRATEGY: Include analysis settings for reproducibility
+        # PURPOSE: Document how analysis was performed
+        params_file <- file.path(temp_dir, "analysis_parameters.txt")
+        params_info <- data.frame(
+          Parameter = c("Analysis Type", "Parameter Column", "Grouping Variable", "Facet Variable", 
+                       if(input$graph_type == "Curve") c("Control Group", "Time Unit") else NULL),
+          Value = c(input$graph_type, 
+                   if(input$graph_type == "Bar plot") input$column else paste(input$column, collapse = ", "),
+                   input$var1, input$var2,
+                   if(input$graph_type == "Curve") c(input$control_group %||% "None", 
+                                                    user_params$unit %||% "Not specified") else NULL),
+          stringsAsFactors = FALSE
         )
-      } else {
-        showNotification("No statistical data available to export.", type = "warning")
-      }
-      
-    }, error = function(e) {
-      showNotification(paste("Error exporting statistical data:", e$message), type = "error")
-    })
-  })
-  
+        write.table(params_info, file = params_file, 
+                   sep = "\t", row.names = FALSE, quote = FALSE)
+        file_list <- c(file_list, params_file)
+        
+        # ZIP ARCHIVE CREATION
+        # STRATEGY: Create zip file in temporary location then copy to download location
+        # PURPOSE: Clean server-side approach that works in deployed environments
+        if (length(file_list) > 0) {
+          # Save current directory
+          curr_dir <- getwd()
+          # Change to temp directory for zipping
+          setwd(temp_dir)
+          # Create the zip file with relative paths
+          zip_file <- file.path(temp_dir, "stats_export.zip")
+          zip(zipfile = zip_file, files = basename(file_list))
+          # Return to original directory
+          setwd(curr_dir)
+          # Copy the zip file to the download location
+          file.copy(zip_file, file, overwrite = TRUE)
+        }
+        
+      }, error = function(e) {
+        # Create error file to download instead
+        writeLines(paste("Error exporting statistical data:", e$message), file)
+        showNotification(paste("Error exporting statistical data:", e$message), type = "error")
+      })
+    },
+    contentType = "application/zip"
+  )
+
   # 13.2 PLOT EXPORT
-  # STRATEGY: High-quality plot export with user customization
-  # PURPOSE: Professional plot output for publications and presentations
-  observeEvent(input$export_plot, {
-    req(current_plot())  # Require completed analysis
-    
-    # FILENAME CONSTRUCTION
-    # STRATEGY: Ensure proper file extension regardless of user input
-    # PURPOSE: Prevent file extension conflicts and ensure correct format
-    base_filename <- input$plot_filename
-    base_filename <- tools::file_path_sans_ext(base_filename)  # Remove existing extension
-    filename <- paste0(base_filename, ".", input$plot_format)  # Add correct extension
-    full_path <- file.path(getwd(), filename)
-    
-    # PLOT EXPORT EXECUTION
-    # STRATEGY: Format-specific export with user-defined dimensions
-    # PURPOSE: High-quality output suitable for different use cases
-    tryCatch({
-      if (input$plot_format %in% c("png", "jpg", "jpeg")) {
-        # RASTER FORMATS: High DPI for quality
-        ggsave(
-          filename = full_path,
-          plot = current_plot(),
-          width = as.numeric(input$plot_width),
-          height = as.numeric(input$plot_height),
-          units = input$plot_units,  # User-selected units (cm, in, mm)
-          dpi = 300  # High resolution for publications
-        )
-      } else if (input$plot_format == "pdf") {
-        # PDF FORMAT: Vector format for scalability
-        ggsave(
-          filename = full_path,
-          plot = current_plot(),
-          width = as.numeric(input$plot_width),
-          height = as.numeric(input$plot_height),
-          units = input$plot_units
-        )
-      } else if (input$plot_format == "svg") {
-        # SVG FORMAT: Scalable vector graphics
-        ggsave(
-          filename = full_path,
-          plot = current_plot(),
-          width = as.numeric(input$plot_width),
-          height = as.numeric(input$plot_height),
-          units = input$plot_units
-        )
-      }
+  # STRATEGY: High-quality plot export with user customization using downloadHandler
+  # PURPOSE: Professional plot output downloadable to client machine
+  output$download_plot <- downloadHandler(
+    filename = function() {
+      # Ensure proper file extension
+      base_filename <- tools::file_path_sans_ext(input$plot_filename)
+      paste0(base_filename, ".", input$plot_format)
+    },
+    content = function(file) {
+      req(current_plot())  # Require completed analysis
       
-      showNotification(paste("Plot exported successfully as", filename, "!"), type = "message")
-    }, error = function(e) {
-      showNotification(paste("Error exporting plot:", e$message), type = "error")
+      # PLOT EXPORT EXECUTION
+      # STRATEGY: Format-specific export with user-defined dimensions
+      # PURPOSE: High-quality output suitable for different use cases
+      tryCatch({
+        ggsave(
+          filename = file,
+          plot = current_plot(),
+          width = as.numeric(input$plot_width),
+          height = as.numeric(input$plot_height),
+          units = input$plot_units,
+          dpi = if(input$plot_format %in% c("png", "jpg", "jpeg")) 300 else NULL
+        )
+        showNotification(paste("Plot exported successfully as", filename, "!"), 
+                        type = "message")
+      }, error = function(e) {
+        showNotification(paste("Error exporting plot:", e$message), type = "error")
+      })
     })
-  })
-  
   # ===========================================
   # END OF SERVER FUNCTION
   # ===========================================
