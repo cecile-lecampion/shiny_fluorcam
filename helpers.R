@@ -808,79 +808,68 @@ analyse_curve <- function(df, col_vector,
   # STRATEGY: Group-vs-control comparisons using qGAM
   # PURPOSE: Statistical inference about group differences
   
-  perform_statistical_tests <- function(df, grouping_col, facet_col, time_col, parameter_col, control_group) {
-    # CONTROL GROUP VALIDATION
-    # STRATEGY: Check if control group exists and is valid
-    # PURPOSE: Prevent errors when control group is missing
-    if (is.null(control_group) || !control_group %in% df[[grouping_col]]) {
-      return(data.frame())  # Return empty if no valid control
-    }
+  perform_statistical_tests <- function(df, 
+                                    grouping_col, 
+                                    facet_col, 
+                                    time_col, 
+                                    parameter_col, 
+                                    control_group) {
+  # First get all unique facets
+  facets <- unique(df[[facet_col]])
+  
+  # Create empty results dataframe with proper structure
+  results <- data.frame(
+    facet = character(),
+    group = character(),
+    p.value = numeric(),
+    stringsAsFactors = FALSE
+  )
+  
+  # Loop through facets
+  for (current_facet in facets) {
+    facet_data <- df[df[[facet_col]] == current_facet,]
+    groups_to_compare <- setdiff(levels(factor(facet_data[[grouping_col]])), 
+                                              control_group)
     
-    # FACET-WISE STATISTICAL TESTING
-    # STRATEGY: Separate statistical tests for each facet panel
-    # PURPOSE: Independent statistical inference for each experimental condition
-    results <- df %>%
-      group_by(.data[[facet_col]]) %>%
-      group_modify(~{
-        # IDENTIFY COMPARISON GROUPS
-        # STRATEGY: Compare all non-control groups to control
-        # PURPOSE: Multiple treatment vs. control comparisons
-        groups_to_compare <- setdiff(levels(factor(.x[[grouping_col]])), control_group)
-        
-        # RESULT DATAFRAME INITIALIZATION
-        # STRATEGY: Pre-allocate results dataframe
-        # PURPOSE: Consistent structure even if some tests fail
-        test_results <- data.frame(
-          Group = groups_to_compare,
-          p.value = NA_real_,
-          stringsAsFactors = FALSE
+    # Process each group
+    for (group in groups_to_compare) {
+      # Create subset with just control and test group
+      df_sub <- facet_data[facet_data[[grouping_col]] %in% 
+                          c(control_group, group),]
+      df_sub[[grouping_col]] <- droplevels(factor(df_sub[[grouping_col]]))
+      
+      # Create a row for this test result
+      result_row <- data.frame(
+        facet = current_facet,
+        group = group,
+        p.value = NA,
+        stringsAsFactors = FALSE
+      )
+      
+      tryCatch({
+        # COMPARATIVE qGAM MODEL
+        m1 <- qgam::qgam(
+          as.formula(paste(parameter_col, "~ s(", time_col, ", by = ", grouping_col, ", k=5) +", grouping_col)),
+          data = df_sub,
+          qu = 0.5  # Median regression
         )
-        names(test_results)[1] <- grouping_col
         
-        # GROUP-WISE TESTING LOOP
-        # STRATEGY: Test each group against control individually
-        # PURPOSE: Separate p-value for each comparison
-        for (i in seq_along(groups_to_compare)) {
-          group <- groups_to_compare[i]
-          
-          # SUBSET DATA FOR COMPARISON
-          # STRATEGY: Only include control and current test group
-          # PURPOSE: Two-group comparison for clear interpretation
-          df_sub <- .x %>% 
-            filter(.data[[grouping_col]] %in% c(control_group, group)) %>%
-            mutate(.data[[grouping_col]] := droplevels(factor(.data[[grouping_col]])))
-          
-          tryCatch({
-            # COMPARATIVE qGAM MODEL
-            # STRATEGY: Model with group-specific smooths
-            # PURPOSE: Test if curves differ significantly between groups
-            m1 <- qgam::qgam(
-              as.formula(paste(parameter_col, "~ s(", time_col, ", by = ", grouping_col, ", k=5) +", grouping_col)),
-              data = df_sub,
-              qu = 0.5  # Median regression
-            )
-            
-            # EXTRACT P-VALUE
-            # STRATEGY: Use smooth term p-value for group difference
-            # PURPOSE: Statistical significance of group × time interaction
-            s <- summary(m1)
-            if (length(s$s.pv) >= 2) {
-              test_results$p.value[i] <- s$s.pv[2]  # Second smooth term p-value
-            }
-          }, error = function(e) {
-            # ERROR HANDLING FOR INDIVIDUAL TESTS
-            # STRATEGY: Warning for failed tests, continue with others
-            # PURPOSE: Partial results better than complete failure
-            warning(paste("Statistical test failed for", group, "in", unique(.x[[facet_col]])[1], ":", e$message))
-          })
+        # EXTRACT P-VALUE
+        s <- summary(m1)
+        if (length(s$s.pv) >= 2) {
+          result_row$p.value <- s$s.pv[2]  # Second smooth term p-value
         }
         
-        return(test_results)
-      }) %>%
-      ungroup()
-    
-    return(results)
+        # Add this result to our results dataframe
+        results <- rbind(results, result_row)
+        
+      }, error = function(e) {
+        warning(paste("Statistical test failed for", group, "in", current_facet, ":", e$message))
+      })
+    }
   }
+  return(results)
+}
   
   # ===========================================
   # MAIN EXECUTION SECTION
@@ -892,11 +881,13 @@ analyse_curve <- function(df, col_vector,
     # STEP 1: DATA VALIDATION AND PREPARATION
     # STRATEGY: Clean and validate data before expensive computations
     # PURPOSE: Ensure data quality and prevent downstream errors
+    cat("Step 1: Data validation\n")
     df_clean <- validate_and_prepare_data(df, parameter_col, time_col, grouping_col, facet_col)
     
     # STEP 2: qGAM MODEL FITTING
     # STRATEGY: Fit smooth curves to each group
     # PURPOSE: Generate trend lines and confidence intervals
+    cat("Step 2: qGAM fitting\n")
     qgam_preds <- fit_qgam_models(df_clean, grouping_col, facet_col, time_col, parameter_col, k)
     
     # STEP 3: STATISTICAL TESTING
@@ -907,9 +898,16 @@ analyse_curve <- function(df, col_vector,
     # STEP 4: MEDIAN POINT CALCULATION
     # STRATEGY: Calculate median values at each time point for overlay
     # PURPOSE: Show actual data points on smooth curves
-    median_points <- df_clean %>%
-      group_by(.data[[facet_col]], .data[[grouping_col]], .data[[time_col]]) %>%
-      summarise(median_value = median(.data[[parameter_col]], na.rm = TRUE), .groups = "drop")
+    median_points <- aggregate(
+      df_clean[[parameter_col]],
+      by = list(
+        facet = df_clean[[facet_col]],
+        group = df_clean[[grouping_col]],
+        time = df_clean[[time_col]]
+      ),
+      FUN = function(x) median(x, na.rm = TRUE)
+    )
+    names(median_points) <- c(facet_col, grouping_col, time_col, "median_value")
     
     # STEP 5: COLOR MAPPING PREPARATION
     # STRATEGY: Create consistent color mapping for groups
@@ -938,7 +936,9 @@ analyse_curve <- function(df, col_vector,
       # PURPOSE: Visual indication of model uncertainty
       geom_ribbon(
         data = qgam_preds,
-        aes(x = .data[[time_col]], ymin = lwr, ymax = upr, fill = .data[[grouping_col]]),
+        aes_string(x = time_col, 
+                  ymin = "lwr", 
+                  ymax = "upr", fill = grouping_col),
         alpha = 0.3,      # Semi-transparent for overlay effect
         linetype = 0      # No border lines on ribbon
       ) +
@@ -948,7 +948,7 @@ analyse_curve <- function(df, col_vector,
       # PURPOSE: Show fitted curves for each group
       geom_line(
         data = qgam_preds,
-        aes(x = .data[[time_col]], y = fit, color = .data[[grouping_col]]),
+        aes_string(x = time_col, y = "fit", color = grouping_col),
         size = 1
       ) +
       
@@ -957,7 +957,8 @@ analyse_curve <- function(df, col_vector,
       # PURPOSE: Connection between model and observed data
       geom_point(
         data = median_points,
-        aes(x = .data[[time_col]], y = median_value, color = .data[[grouping_col]]),
+        aes_string(x = time_col, 
+                  y = "median_value", color = grouping_col),
         size = 1.5, alpha = 0.7
       ) +
       

@@ -521,22 +521,7 @@ server <- function(input, output, session) {
   # STRATEGY: Dynamic result display based on analysis type
   # PURPOSE: Show relevant statistical information to users
   
-  # NORMALITY TEST RESULT (BAR PLOT ONLY)
-  # STRATEGY: Real-time normality assessment
-  # PURPOSE: Inform users about statistical test appropriateness
-  output$normality_text <- renderText({
-    req(analysis_results())
-    
-    # Get the normality result directly
-    normality_message <- analysis_results()$normality
-    
-    # If you returned just the flag, format the message here
-    normality_flag <- analysis_results()$normality
-    normality_message <- if(normality_flag) "Data follows a normal law." else "Data doesn't follow a normal law."
-    print(normality_flag)
-    return(normality_message)
-  })
-
+  
   # SELECTED VALUE DISPLAY
   # STRATEGY: Confirmation of user selection
   output$selectedValue <- renderText({
@@ -594,7 +579,19 @@ server <- function(input, output, session) {
         line_color = input$line_color,
         point_color = input$point_color
       )
-      
+      # Extract the normality flag
+      flag_normal <- barplot_results$normality
+
+      # Set up the normality text output
+      output$normality_text <- renderText({
+        if (isTRUE(flag_normal)) {
+          "Datas follow a normal law"
+        } else if (isFALSE(flag_normal)) {
+          "Datas don't follow a normal law"
+        } else {
+          "Normality test result is unavailable"
+        }
+      })
       # STORE RESULTS FOR EXPORT
       # STRATEGY: Separate storage enables independent export functionality
       current_plot(barplot_results$plot)
