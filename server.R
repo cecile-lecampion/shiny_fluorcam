@@ -11,13 +11,13 @@ source("global.R",  local = TRUE) # Load the global variables and packages
 source("helpers.R", local = TRUE) # Load the helper functions
 
 server <- function(input, output, session) { 
-  
+
   # ===========================================
   # SECTION 1: INITIALIZATION & SETUP
   # ===========================================
   # STRATEGY: Set up core reactive infrastructure and directory browsing
   # PURPOSE: Foundation for all subsequent functionality
-  
+
   # DIRECTORY BROWSING SETUP
   # STRATEGY: Cross-platform directory selection using shinyDirChoose
   # BENEFIT: Works on Windows, Mac, and Linux
@@ -40,18 +40,18 @@ server <- function(input, output, session) {
   # ===========================================
   # STRATEGY: Create unique workspace for each user session
   # PURPOSE: Isolate user files and enable automatic cleanup
-  
+
   # CREATE UNIQUE SESSION DIRECTORY
   # STRATEGY: Use session token for unique folder names
   # PURPOSE: Prevent file mixing between concurrent users
   session_id <- session$token
   session_dir <- file.path(tempdir(), paste0("fluorcam_session_", session_id))
-  
+
   # ENSURE SESSION DIRECTORY EXISTS
   if (!dir.exists(session_dir)) {
     dir.create(session_dir, recursive = TRUE)
   }
-  
+
   # SESSION CLEANUP ON DISCONNECT
   # STRATEGY: Automatic cleanup when user disconnects
   # PURPOSE: Remove files immediately when session ends
@@ -61,7 +61,7 @@ server <- function(input, output, session) {
       cat("Cleaned up session directory:", session_id, "\n")
     }
   })
-  
+
   # PERIODIC CLEANUP FUNCTION
   # STRATEGY: Background cleanup for orphaned directories
   # PURPOSE: Safety net for cleanup in case of unexpected disconnections
@@ -70,7 +70,7 @@ server <- function(input, output, session) {
     all_dirs <- list.dirs(temp_base, full.names = TRUE, recursive = FALSE)
     session_dirs <- all_dirs[grepl("fluorcam_session_", basename(all_dirs))]
     current_time <- Sys.time()
-    
+
     for (dir in session_dirs) {
       dir_time <- file.info(dir)$mtime
       # CLEANUP AFTER 2 HOURS
@@ -80,7 +80,7 @@ server <- function(input, output, session) {
       }
     }
   }
-  
+
   # SCHEDULE PERIODIC CLEANUP
   # STRATEGY: Run cleanup every 30 minutes
   observeEvent(reactiveTimer(30 * 60 * 1000)(), {
@@ -88,28 +88,28 @@ server <- function(input, output, session) {
   })
 
   # ===========================================
-  # SECTION 2: FILE UPLOAD FUNCTIONALITY  
+  # SECTION 2: FILE UPLOAD FUNCTIONALITY
   # ===========================================
   # STRATEGY: Handle file uploads with validation and session isolation
   # PURPOSE: Replace directory browsing with file upload
-  
+
   # FILE UPLOAD PROCESSING
   observeEvent(input$uploaded_files, {
     req(input$uploaded_files)
-    
+
     tryCatch({
       # COPY UPLOADED FILES TO SESSION DIRECTORY
       # STRATEGY: Move files from temp upload to session-specific folder
       # PURPOSE: Organize files and enable processing
       uploaded_paths <- input$uploaded_files$datapath
       original_names <- input$uploaded_files$name
-      
+
       # VALIDATE FILE NAMES
       # STRATEGY: Check naming convention before processing
       # PURPOSE: Early validation to prevent processing errors
       invalid_files <- c()
       valid_files <- c()
-      
+
       for (i in seq_along(original_names)) {
         # CHECK NAMING PATTERN: VAR1_VAR2_VAR3.txt
         if (grepl("^[^_]+_[^_]+_[^_]+\\.(txt|TXT)$", original_names[i])) {
@@ -121,34 +121,34 @@ server <- function(input, output, session) {
           invalid_files <- c(invalid_files, original_names[i])
         }
       }
-      
+
       # VALIDATION FEEDBACK
       if (length(invalid_files) > 0) {
         showNotification(
-          paste("Invalid file names (must be VAR1_VAR2_VAR3.txt):", 
-                paste(invalid_files, collapse = ", ")), 
+          paste("Invalid file names (must be VAR1_VAR2_VAR3.txt):",
+                paste(invalid_files, collapse = ", ")),
           type = "warning", duration = 10
         )
       }
-      
+
       if (length(valid_files) > 0) {
         showNotification(
-          paste("Successfully uploaded", length(valid_files), "files"), 
+          paste("Successfully uploaded", length(valid_files), "files"),
           type = "message"
         )
       }
-      
+
     }, error = function(e) {
       showNotification(paste("Error uploading files:", e$message), type = "error")
     })
   })
-  
+
   # UPLOAD STATUS DISPLAY
   output$upload_status <- renderText({
     if (is.null(input$uploaded_files)) {
       return("No files uploaded yet.")
     }
-    
+
     files_in_session <- list.files(session_dir, pattern = "\\.(txt|TXT)$")
     if (length(files_in_session) > 0) {
       paste("Files ready for analysis:", length(files_in_session), "files")
@@ -156,13 +156,13 @@ server <- function(input, output, session) {
       "No valid files found. Please check file naming convention."
     }
   })
-  
+
   # FILES UPLOADED FLAG
   output$files_uploaded <- reactive({
     !is.null(input$uploaded_files) && length(list.files(session_dir, pattern = "\\.(txt|TXT)$")) > 0
   })
   outputOptions(output, "files_uploaded", suspendWhenHidden = FALSE)
-  
+
   # UPLOADED FILES TABLE
   output$uploaded_files_table <- renderTable({
     files_in_session <- list.files(session_dir, pattern = "\\.(txt|TXT)$")
@@ -183,13 +183,13 @@ server <- function(input, output, session) {
   })
 
   # REMOVE the directory display output (output$dirpath) as it's no longer needed
-  
+
   # ===========================================
   # SECTION 2: FILE PREVIEW FUNCTIONALITY
   # ===========================================
   # STRATEGY: Allow users to preview files before loading
   # PURPOSE: Prevent loading wrong files, provide transparency
-  
+
   # FILE LIST TOGGLE STATE
   # STRATEGY: ReactiveVal for simple boolean state management
   # PURPOSE: Control whether to show all files or just first 5
@@ -216,12 +216,12 @@ server <- function(input, output, session) {
   # ===========================================
   # STRATEGY: Centralized reactive data storage
   # PURPOSE: Single source of truth for data and parameters across app
-  
+
   # MAIN DATA STORAGE
   # STRATEGY: ReactiveValues for mutable data storage
   # PURPOSE: Store processed data that can be updated and accessed by multiple functions
   result_df <- reactiveValues(data = NULL)
-  
+
   # USER PARAMETER STORAGE
   # STRATEGY: Separate reactive storage for analysis parameters
   # PURPOSE: Store time values, units, and selected parameters for curve analysis
@@ -231,7 +231,7 @@ server <- function(input, output, session) {
   # STRATEGY: Global state for table view mode (preview vs full)
   # WHY OUTSIDE LOAD EVENT: Persists across data reloads
   show_full_table <- reactiveValues(full = FALSE)
-  
+
   # TABLE TOGGLE OBSERVER
   # STRATEGY: Global observer for table view toggle
   # PURPOSE: Switch between 5-row preview and full table display
@@ -244,11 +244,11 @@ server <- function(input, output, session) {
   # ===========================================
   # STRATEGY: Robust data loading with validation and error handling
   # PURPOSE: Load and validate data files, provide user feedback
-  
+
   observeEvent(input$load, {
     # INPUT VALIDATION
     req(input$pattern, input$var1, input$var2, input$var3)
-    
+
     # CHECK IF FILES EXIST IN SESSION
     available_files <- list.files(session_dir, pattern = input$pattern, full.names = TRUE)
     if (length(available_files) == 0) {
@@ -260,8 +260,9 @@ server <- function(input, output, session) {
     if (!validate_session_size()) {
       return()
     }
-    
+
     # EXTRACT INPUT VALUES
+    # STRATEGY: Store inputs in local variables
     pattern <- input$pattern
     var1 <- input$var1
     var2 <- input$var2
@@ -270,9 +271,10 @@ server <- function(input, output, session) {
     # MAIN DATA PROCESSING
     tryCatch({
       # CALL DATA PROCESSING FUNCTION WITH SESSION DIRECTORY
+      # STRATEGY: Delegate complex processing to helper function
+      # PURPOSE: Keep server code clean, enable testing of processing logic
       processed_data <- process_data_files(
-        pattern = pattern, 
-        areas = "", 
+        pattern = pattern,
         var1 = var1, 
         var2 = var2, 
         var3 = var3, 
@@ -297,10 +299,12 @@ server <- function(input, output, session) {
         req(result_df$data)
         actionButton("toggle_table", "Show Full Table", class = "btn-info")
       })
-      
+
     }, error = function(e) {
+      # ERROR HANDLING
+      # STRATEGY: User-friendly error messages + console logging for debugging
       showNotification(paste("Failed to load data files:", e$message), type = "error")
-      print(e)
+      print(e)  # Console logging for developers
     })
   })
   
@@ -310,10 +314,10 @@ server <- function(input, output, session) {
   # STRATEGY: Interactive data table with responsive design
   # PURPOSE: Allow users to explore loaded data with horizontal scrolling and filtering
   # WHY OUTSIDE LOAD EVENT: Reactive to show_full_table changes
-  
+
   output$processed_data <- DT::renderDataTable({
     req(result_df$data)  # Only render when data is available
-    
+
     if (show_full_table$full) {
       # FULL TABLE MODE
       # STRATEGY: Full featured interactive table for data exploration
@@ -353,7 +357,7 @@ server <- function(input, output, session) {
       )
     }
   }, server = FALSE)  # Client-side processing for better performance
-  
+
   # TABLE TOGGLE BUTTON TEXT UPDATE
   # STRATEGY: Dynamic button text based on current state
   # PURPOSE: Clear indication of what clicking the button will do
@@ -364,20 +368,20 @@ server <- function(input, output, session) {
       actionButton("toggle_table", button_text, class = "btn-info")
     })
   })
-  
+
   # ===========================================
   # SECTION 6: DYNAMIC UI GENERATION
   # ===========================================
   # STRATEGY: Generate UI elements based on loaded data and user selections
   # PURPOSE: Adaptive interface that responds to data structure and analysis type
-  
+
   # 6.1 ROOT PARAMETER SELECTION (CURVE ANALYSIS ONLY)
   # STRATEGY: Extract parameter roots from column names automatically
   # PURPOSE: Identify available parameters without manual specification
   output$rootSelect <- renderUI({
     req(result_df$data)
     req(input$graph_type == "Curve")  # Only for curve analysis
-    
+
     all_cols <- colnames(result_df$data)
     # PATTERN EXTRACTION: Find columns with time point suffixes (_L1, _D2, etc.)
     # STRATEGY: Regular expression to identify parameter families
@@ -390,7 +394,7 @@ server <- function(input, output, session) {
   # PURPOSE: Match column selection to analysis requirements
   output$columnSelect <- renderUI({
     req(result_df$data)
-    
+
     if (input$graph_type == "Curve") {
       # CURVE ANALYSIS: Multiple time point columns
       req(input$root)
@@ -429,7 +433,7 @@ server <- function(input, output, session) {
     available_choices <- all_cols[grepl(pattern, all_cols)]
     
     # UPDATE SELECTION: Use updateSelectInput for programmatic changes
-    updateSelectInput(session, "column", 
+    updateSelectInput(session, "column",
                       selected = available_choices)
   })
   
@@ -470,14 +474,14 @@ server <- function(input, output, session) {
       selected = NULL
     )
   })
-  
+
   # ===========================================
   # SECTION 7: MODAL DIALOG FOR TIME PARAMETERS
   # ===========================================
   # STRATEGY: Modal dialog for complex parameter input
   # PURPOSE: Configure time values and units for curve analysis
   # WHY MODAL: Keeps main UI clean while allowing detailed parameter setup
-  
+
   observeEvent(input$edit_params, {
     req(input$column)
     params <- input$column
@@ -581,14 +585,14 @@ server <- function(input, output, session) {
   # ===========================================
   # STRATEGY: Centralized reactive logic for data organization
   # PURPOSE: Consistent variable handling across analysis functions
-  
+
   # SELECTED VALUE REACTIVE
   # STRATEGY: Standardized access to selected columns
   VALUE <- reactive({
     req(input$column)
     input$column
   })
-  
+
   # VARIABLE ASSIGNMENT BASED ON FACETING CHOICE
   # STRATEGY: Dynamic variable assignment for flexible faceting
   # PURPOSE: Allow users to choose which variable to use for grouping vs faceting
@@ -605,7 +609,7 @@ server <- function(input, output, session) {
   # ===========================================
   # STRATEGY: Drag-and-drop interface for group ordering
   # PURPOSE: User control over plot appearance and legend order
-  
+
   # GROUPING VARIABLE ORDER
   output$var2_order_ui <- renderUI({
     req(result_df$data)
@@ -637,14 +641,14 @@ server <- function(input, output, session) {
       # BAR PLOT: Three color components
       # STRATEGY: Separate controls for different plot elements
       tagList(
-        colourInput("line_color", 
-                    label = tags$span("Line color", style = "font-weight: normal;"), 
+        colourInput("line_color",
+                    label = tags$span("Line color", style = "font-weight: normal;"),
                     value = "darkgrey"),
-        colourInput("fill_color", 
-                    label = tags$span("Fill color", style = "font-weight: normal;"), 
+        colourInput("fill_color",
+                    label = tags$span("Fill color", style = "font-weight: normal;"),
                     value = "ivory1"),
-        colourInput("point_color", 
-                    label = tags$span("Point color", style = "font-weight: normal;"), 
+        colourInput("point_color",
+                    label = tags$span("Point color", style = "font-weight: normal;"),
                     value = "darkgreen")
       )
     } else if (input$graph_type == "Curve") {
@@ -668,34 +672,7 @@ server <- function(input, output, session) {
   # ===========================================
   # STRATEGY: Dynamic result display based on analysis type
   # PURPOSE: Show relevant statistical information to users
-  
-  # NORMALITY TEST RESULT (BAR PLOT ONLY)
-  # STRATEGY: Real-time normality assessment
-  # PURPOSE: Inform users about statistical test appropriateness
-  output$normality_result <- renderText({
-    req(input$start_analysis > 0)  # Only after analysis initiated
-    req(result_df$data, input$graph_type == "Bar plot", input$column)
-    req(input$column %in% colnames(result_df$data))
-    
-    var1 <- facet_var()
-    var2 <- x_var()
-    MEASURE_COL <- VALUE()
-    
-    # SHAPIRO-WILK TEST
-    # STRATEGY: Group-wise normality testing
-    shapiro_df <- result_df$data %>%
-      dplyr::group_by(!!sym(var2), !!sym(var1)) %>%
-      rstatix::shapiro_test(!!sym(MEASURE_COL))
-    
-    # INTERPRET RESULTS
-    # STRATEGY: Simple yes/no interpretation for users
-    flag_normal <- check_normality(shapiro_df)
-    if (flag_normal) {
-      "Datas follow a normal law."
-    } else {
-      "Datas don't follow a normal law."
-    }
-  })
+
 
   # SELECTED VALUE DISPLAY
   # STRATEGY: Confirmation of user selection
@@ -719,18 +696,19 @@ server <- function(input, output, session) {
   # ===========================================
   # STRATEGY: Centralized analysis execution with result storage
   # PURPOSE: Execute statistical analysis and generate plots
-  
+
   # REACTIVE STORAGE FOR EXPORT
   # STRATEGY: Separate storage for plot and statistical data
   # PURPOSE: Enable export functionality independent of display
   current_plot <- reactiveVal(NULL)
   current_stats <- reactiveVal(NULL)
-  
+
   # MAIN ANALYSIS REACTIVE
   # STRATEGY: Event-driven analysis execution
   # PURPOSE: Run analysis only when user clicks "Start Analysis"
   analysis_results <- eventReactive(input$start_analysis, {
     # INPUT VALIDATION
+    # STRATEGY: Comprehensive requirement checking
     req(result_df$data)
     req(input$graph_type)
     req(input$facet_var)
@@ -738,25 +716,14 @@ server <- function(input, output, session) {
     req(input$var1_order)
     req(input$var2_order)
     
-    # CHECK IF ALL REQUIRED COLUMNS EXIST
+
     if (input$graph_type == "Bar plot") {
-      required_cols <- c(facet_var(), x_var(), VALUE())
-      missing_cols <- setdiff(required_cols, colnames(result_df$data))
-      
-      if (length(missing_cols) > 0) {
-        showNotification(
-          paste("Missing columns:", paste(missing_cols, collapse = ", "),
-                "\nAvailable columns:", paste(colnames(result_df$data), collapse = ", ")),
-          type = "error", duration = 15
-        )
-        return(NULL)
-      }
-      
       # BAR PLOT ANALYSIS
-      bar_result <- analyse_barplot(
+      # STRATEGY: Delegate to specialized analysis function
+      barplot_results <- analyse_barplot(
         data = result_df$data,
         var1 = facet_var(),
-        var2 = x_var(), 
+        var2 = x_var(),
         measure_col = VALUE(),
         var1_order = input$var1_order,
         var2_order = input$var2_order,
@@ -764,20 +731,33 @@ server <- function(input, output, session) {
         line_color = input$line_color,
         point_color = input$point_color
       )
-      
+      # Extract the normality flag
+      flag_normal <- barplot_results$normality
+
+      # Set up the normality text output
+      output$normality_text <- renderText({
+        if (isTRUE(flag_normal)) {
+          "Datas follow a normal law"
+        } else if (isFALSE(flag_normal)) {
+          "Datas don't follow a normal law"
+        } else {
+          "Normality test result is unavailable"
+        }
+      })
       # STORE RESULTS FOR EXPORT
-      current_plot(bar_result$plot)
-      current_stats(bar_result)
-      
-      return(bar_result$plot)
-      
+      # STRATEGY: Separate storage enables independent export functionality
+      current_plot(barplot_results$plot)
+      current_stats(barplot_results)
+
+      return(barplot_results$plot)
+
     } else if (input$graph_type == "Curve") {
       # CURVE ANALYSIS
       # STRATEGY: Additional validation for curve-specific requirements
       req(input$var2)
       req(user_params$selected_params)
       req(input$column)
-      req(input$control_group)
+      req(input$control_group)  # Control group required for statistical comparisons
 
       # COLOR VECTOR PREPARATION
       # STRATEGY: Extract user-selected colors for each group
@@ -816,7 +796,7 @@ server <- function(input, output, session) {
             TRUE ~ NA_real_
           )
         )
-      
+
       # CURVE ANALYSIS EXECUTION
       # STRATEGY: Delegate to specialized qGAM analysis function
       curve_results <- analyse_curve(
@@ -829,11 +809,11 @@ server <- function(input, output, session) {
         control_group = input$control_group,
         user_params = reactiveValuesToList(user_params)
       )
-      
+
       # STORE RESULTS FOR EXPORT
       current_plot(curve_results$plot)
       current_stats(curve_results)
-      
+
       return(curve_results$plot)
     }
   })
@@ -844,7 +824,7 @@ server <- function(input, output, session) {
   output$plot_result <- renderPlot({
     analysis_results()
   })
-  
+
   # RESULT AVAILABILITY CONFIRMATION
   # STRATEGY: Ensure export functionality knows when results are ready
   observeEvent(analysis_results(), {
@@ -852,237 +832,183 @@ server <- function(input, output, session) {
     # Results are automatically stored in current_plot and current_stats
     # This observer ensures they're available for export
   })
-  
+
   # ===========================================
   # SECTION 13: EXPORT FUNCTIONALITY
   # ===========================================
-  # STRATEGY: Professional export capabilities for data and plots
-  # PURPOSE: Enable users to save and share analysis results
-  
+  # STRATEGY: Professional export capabilities with downloadHandler
+  # PURPOSE: Enable users to save and share analysis results locally
+
   # 13.1 STATISTICAL DATA EXPORT
-  # STRATEGY: Multiple text files in zip archive for universal compatibility
-  # PURPOSE: Organized, readable statistical output
-  observeEvent(input$export_stats, {
-    req(current_stats())  # Require completed analysis
-    
-    zip_filename <- paste0(input$stats_filename, ".zip")
-    
-    tryCatch({
-      temp_dir <- tempdir()
-      file_list <- c()
-      stats_data <- current_stats()  # Get stored statistical results
-      
-      if (input$graph_type == "Bar plot") {
-        # BAR PLOT STATISTICAL EXPORTS
-        # STRATEGY: Separate file for each type of statistical result
-        # PURPOSE: Organized output that's easy to navigate
-        
-        if (!is.null(stats_data$summary)) {
-          summary_file <- file.path(temp_dir, "summary_statistics.txt")
-          write.table(stats_data$summary, file = summary_file, 
-                     sep = "\t", row.names = FALSE, quote = FALSE)
-          file_list <- c(file_list, summary_file)
+  # STRATEGY: Multiple text files in zip archive using downloadHandler
+  # PURPOSE: Organized, readable statistical output accessible on client side
+  output$download_stats <- downloadHandler(
+    filename = function() {
+      paste0(input$stats_filename, ".zip")
+    },
+    content = function(file) {
+      req(current_stats())  # Require completed analysis
+
+      tryCatch({
+        # Create temporary directory for files
+        temp_dir <- tempdir()
+        file_list <- c()
+        stats_data <- current_stats()  # Get stored statistical results
+
+        if (input$graph_type == "Bar plot") {
+          # BAR PLOT STATISTICAL EXPORTS
+          # STRATEGY: Separate file for each type of statistical result
+          # PURPOSE: Organized output that's easy to navigate
+
+          if (!is.null(stats_data$summary)) {
+            summary_file <- file.path(temp_dir, "summary_statistics.txt")
+            write.table(stats_data$summary, file = summary_file,
+                       sep = "\t", row.names = FALSE, quote = FALSE)
+            file_list <- c(file_list, summary_file)
+          }
+
+          if (!is.null(stats_data$shapiro)) {
+            shapiro_file <- file.path(temp_dir, "shapiro_normality_test.txt")
+            write.table(stats_data$shapiro, file = shapiro_file,
+                       sep = "\t", row.names = FALSE, quote = FALSE)
+            file_list <- c(file_list, shapiro_file)
+          }
+
+          if (!is.null(stats_data$anova)) {
+            anova_file <- file.path(temp_dir, "anova_results.txt")
+            write.table(stats_data$anova, file = anova_file,
+                       sep = "\t", row.names = FALSE, quote = FALSE)
+            file_list <- c(file_list, anova_file)
+          }
+
+          if (!is.null(stats_data$tukey)) {
+            tukey_file <- file.path(temp_dir, "tukey_hsd_test.txt")
+            write.table(stats_data$tukey, file = tukey_file,
+                       sep = "\t", row.names = FALSE, quote = FALSE)
+            file_list <- c(file_list, tukey_file)
+          }
+
+          if (!is.null(stats_data$kruskal)) {
+            kruskal_file <- file.path(temp_dir, "kruskal_wallis_test.txt")
+            write.table(stats_data$kruskal, file = kruskal_file,
+                       sep = "\t", row.names = FALSE, quote = FALSE)
+            file_list <- c(file_list, kruskal_file)
+          }
+
+          if (!is.null(stats_data$dunn)) {
+            dunn_file <- file.path(temp_dir, "dunn_post_hoc_test.txt")
+            write.table(stats_data$dunn, file = dunn_file,
+                       sep = "\t", row.names = FALSE, quote = FALSE)
+            file_list <- c(file_list, dunn_file)
+          }
+
+          if (!is.null(stats_data$cld)) {
+            cld_file <- file.path(temp_dir, "compact_letter_display.txt")
+            write.table(stats_data$cld, file = cld_file,
+                       sep = "\t", row.names = FALSE, quote = FALSE)
+            file_list <- c(file_list, cld_file)
+          }
+
+        } else if (input$graph_type == "Curve") {
+          # CURVE ANALYSIS STATISTICAL EXPORTS
+          # STRATEGY: Export qGAM predictions and statistical test results
+
+          if (!is.null(stats_data$qgam_predictions)) {
+            qgam_file <- file.path(temp_dir, "qgam_model_predictions.txt")
+            write.table(stats_data$qgam_predictions, file = qgam_file,
+                       sep = "\t", row.names = FALSE, quote = FALSE)
+            file_list <- c(file_list, qgam_file)
+          }
+
+          if (!is.null(stats_data$statistical_results) && nrow(stats_data$statistical_results) > 0) {
+            stats_file <- file.path(temp_dir, "curve_statistical_tests.txt")
+            write.table(stats_data$statistical_results, file = stats_file,
+                       sep = "\t", row.names = FALSE, quote = FALSE)
+            file_list <- c(file_list, stats_file)
+          }
+
+          if (!is.null(stats_data$median_points)) {
+            median_file <- file.path(temp_dir, "median_data_points.txt")
+            write.table(stats_data$median_points, file = median_file,
+                       sep = "\t", row.names = FALSE, quote = FALSE)
+            file_list <- c(file_list, median_file)
+          }
         }
-        
-        if (!is.null(stats_data$shapiro)) {
-          shapiro_file <- file.path(temp_dir, "shapiro_normality_test.txt")
-          write.table(stats_data$shapiro, file = shapiro_file, 
-                     sep = "\t", row.names = FALSE, quote = FALSE)
-          file_list <- c(file_list, shapiro_file)
-        }
-        
-        if (!is.null(stats_data$anova)) {
-          anova_file <- file.path(temp_dir, "anova_results.txt")
-          write.table(stats_data$anova, file = anova_file, 
-                     sep = "\t", row.names = FALSE, quote = FALSE)
-          file_list <- c(file_list, anova_file)
-        }
-        
-        if (!is.null(stats_data$tukey)) {
-          tukey_file <- file.path(temp_dir, "tukey_hsd_test.txt")
-          write.table(stats_data$tukey, file = tukey_file, 
-                     sep = "\t", row.names = FALSE, quote = FALSE)
-          file_list <- c(file_list, tukey_file)
-        }
-        
-        if (!is.null(stats_data$kruskal)) {
-          kruskal_file <- file.path(temp_dir, "kruskal_wallis_test.txt")
-          write.table(stats_data$kruskal, file = kruskal_file, 
-                     sep = "\t", row.names = FALSE, quote = FALSE)
-          file_list <- c(file_list, kruskal_file)
-        }
-        
-        if (!is.null(stats_data$dunn)) {
-          dunn_file <- file.path(temp_dir, "dunn_post_hoc_test.txt")
-          write.table(stats_data$dunn, file = dunn_file, 
-                     sep = "\t", row.names = FALSE, quote = FALSE)
-          file_list <- c(file_list, dunn_file)
-        }
-        
-        if (!is.null(stats_data$cld)) {
-          cld_file <- file.path(temp_dir, "compact_letter_display.txt")
-          write.table(stats_data$cld, file = cld_file, 
-                     sep = "\t", row.names = FALSE, quote = FALSE)
-          file_list <- c(file_list, cld_file)
-        }
-        
-      } else if (input$graph_type == "Curve") {
-        # CURVE ANALYSIS STATISTICAL EXPORTS
-        # STRATEGY: Export qGAM predictions and statistical test results
-        
-        if (!is.null(stats_data$qgam_predictions)) {
-          qgam_file <- file.path(temp_dir, "qgam_model_predictions.txt")
-          write.table(stats_data$qgam_predictions, file = qgam_file, 
-                     sep = "\t", row.names = FALSE, quote = FALSE)
-          file_list <- c(file_list, qgam_file)
-        }
-        
-        if (!is.null(stats_data$statistical_results) && nrow(stats_data$statistical_results) > 0) {
-          stats_file <- file.path(temp_dir, "curve_statistical_tests.txt")
-          write.table(stats_data$statistical_results, file = stats_file, 
-                     sep = "\t", row.names = FALSE, quote = FALSE)
-          file_list <- c(file_list, stats_file)
-        }
-        
-        if (!is.null(stats_data$median_points)) {
-          median_file <- file.path(temp_dir, "median_data_points.txt")
-          write.table(stats_data$median_points, file = median_file, 
-                     sep = "\t", row.names = FALSE, quote = FALSE)
-          file_list <- c(file_list, median_file)
-        }
-      }
-      
-      # ANALYSIS PARAMETERS SUMMARY
-      # STRATEGY: Include analysis settings for reproducibility
-      # PURPOSE: Document how analysis was performed
-      params_file <- file.path(temp_dir, "analysis_parameters.txt")
-      params_info <- data.frame(
-        Parameter = c("Analysis Type", "Parameter Column", "Grouping Variable", "Facet Variable", 
-                     if(input$graph_type == "Curve") c("Control Group", "Time Unit") else NULL),
-        Value = c(input$graph_type, 
-                 if(input$graph_type == "Bar plot") input$column else paste(input$column, collapse = ", "),
-                 input$var1, input$facet_var,
-                 if(input$graph_type == "Curve") c(input$control_group %||% "None", 
-                                                  user_params$unit %||% "Not specified") else NULL),
-        stringsAsFactors = FALSE
-      )
-      write.table(params_info, file = params_file, 
-                 sep = "\t", row.names = FALSE, quote = FALSE)
-      file_list <- c(file_list, params_file)
-      
-      # ZIP ARCHIVE CREATION
-      # STRATEGY: Temporary directory manipulation for clean zip structure
-      # PURPOSE: Create zip with just filenames, not full paths
-      if (length(file_list) > 0) {
-        current_wd <- getwd()
-        setwd(temp_dir)
-        zip(zipfile = file.path(current_wd, zip_filename), 
-            files = basename(file_list))
-        setwd(current_wd)
-        
-        showNotification(
-          paste("Statistical data exported successfully as", zip_filename, "with", length(file_list), "files!"), 
-          type = "message", duration = 5
+
+        # ANALYSIS PARAMETERS SUMMARY
+        # STRATEGY: Include analysis settings for reproducibility
+        # PURPOSE: Document how analysis was performed
+        params_file <- file.path(temp_dir, "analysis_parameters.txt")
+        params_info <- data.frame(
+          Parameter = c("Analysis Type", "Parameter Column", "Grouping Variable", "Facet Variable",
+                       if(input$graph_type == "Curve") c("Control Group", "Time Unit") else NULL),
+          Value = c(input$graph_type,
+                   if(input$graph_type == "Bar plot") input$column else paste(input$column, collapse = ", "),
+                   input$var1, input$var2,
+                   if(input$graph_type == "Curve") c(input$control_group %||% "None",
+                                                    user_params$unit %||% "Not specified") else NULL),
+          stringsAsFactors = FALSE
         )
-      } else {
-        showNotification("No statistical data available to export.", type = "warning")
-      }
-      
-    }, error = function(e) {
-      showNotification(paste("Error exporting statistical data:", e$message), type = "error")
-    })
-  })
-  
+        write.table(params_info, file = params_file,
+                   sep = "\t", row.names = FALSE, quote = FALSE)
+        file_list <- c(file_list, params_file)
+
+        # ZIP ARCHIVE CREATION
+        # STRATEGY: Create zip file in temporary location then copy to download location
+        # PURPOSE: Clean server-side approach that works in deployed environments
+        if (length(file_list) > 0) {
+          # Save current directory
+          curr_dir <- getwd()
+          # Change to temp directory for zipping
+          setwd(temp_dir)
+          # Create the zip file with relative paths
+          zip_file <- file.path(temp_dir, "stats_export.zip")
+          zip(zipfile = zip_file, files = basename(file_list))
+          # Return to original directory
+          setwd(curr_dir)
+          # Copy the zip file to the download location
+          file.copy(zip_file, file, overwrite = TRUE)
+        }
+
+      }, error = function(e) {
+        # Create error file to download instead
+        writeLines(paste("Error exporting statistical data:", e$message), file)
+        showNotification(paste("Error exporting statistical data:", e$message), type = "error")
+      })
+    },
+    contentType = "application/zip"
+  )
+
   # 13.2 PLOT EXPORT
-  # STRATEGY: High-quality plot export with user customization
-  # PURPOSE: Professional plot output for publications and presentations
-  observeEvent(input$export_plot, {
-    req(current_plot())  # Require completed analysis
-    
-    # FILENAME CONSTRUCTION
-    # STRATEGY: Ensure proper file extension regardless of user input
-    # PURPOSE: Prevent file extension conflicts and ensure correct format
-    base_filename <- input$plot_filename
-    base_filename <- tools::file_path_sans_ext(base_filename)  # Remove existing extension
-    filename <- paste0(base_filename, ".", input$plot_format)  # Add correct extension
-    full_path <- file.path(getwd(), filename)
-    
-    # PLOT EXPORT EXECUTION
-    # STRATEGY: Format-specific export with user-defined dimensions
-    # PURPOSE: High-quality output suitable for different use cases
-    tryCatch({
-      if (input$plot_format %in% c("png", "jpg", "jpeg")) {
-        # RASTER FORMATS: High DPI for quality
+  # STRATEGY: High-quality plot export with user customization using downloadHandler
+  # PURPOSE: Professional plot output downloadable to client machine
+  output$download_plot <- downloadHandler(
+    filename = function() {
+      # Ensure proper file extension
+      base_filename <- tools::file_path_sans_ext(input$plot_filename)
+      paste0(base_filename, ".", input$plot_format)
+    },
+    content = function(file) {
+      req(current_plot())  # Require completed analysis
+
+      # PLOT EXPORT EXECUTION
+      # STRATEGY: Format-specific export with user-defined dimensions
+      # PURPOSE: High-quality output suitable for different use cases
+      tryCatch({
         ggsave(
-          filename = full_path,
+          filename = file,
           plot = current_plot(),
           width = as.numeric(input$plot_width),
           height = as.numeric(input$plot_height),
-          units = input$plot_units,  # User-selected units (cm, in, mm)
-          dpi = 300  # High resolution for publications
+          units = input$plot_units,
+          dpi = if(input$plot_format %in% c("png", "jpg", "jpeg")) 300 else NULL
         )
-      } else if (input$plot_format == "pdf") {
-        # PDF FORMAT: Vector format for scalability
-        ggsave(
-          filename = full_path,
-          plot = current_plot(),
-          width = as.numeric(input$plot_width),
-          height = as.numeric(input$plot_height),
-          units = input$plot_units
-        )
-      } else if (input$plot_format == "svg") {
-        # SVG FORMAT: Scalable vector graphics
-        ggsave(
-          filename = full_path,
-          plot = current_plot(),
-          width = as.numeric(input$plot_width),
-          height = as.numeric(input$plot_height),
-          units = input$plot_units
-        )
-      }
-      
-      showNotification(paste("Plot exported successfully as", filename, "!"), type = "message")
-    }, error = function(e) {
-      showNotification(paste("Error exporting plot:", e$message), type = "error")
+        showNotification(paste("Plot exported successfully as", filename, "!"),
+                        type = "message")
+      }, error = function(e) {
+        showNotification(paste("Error exporting plot:", e$message), type = "error")
+      })
     })
-  })
-  
-  # ===========================================
-  # SECURITY AND RESOURCE MANAGEMENT
-  # ===========================================
-  # STRATEGY: Implement comprehensive security and resource limits
-  # PURPOSE: Protect server resources and ensure fair usage
-  
-  # FILE SIZE LIMITS
-  # STRATEGY: Prevent abuse through large file uploads
-  # Maximum total upload size per session
-  MAX_SESSION_SIZE <- 100 * 1024 * 1024  # 100 MB
-  
-  # VALIDATE SESSION SIZE
-  validate_session_size <- function() {
-    if (dir.exists(session_dir)) {
-      total_size <- sum(file.size(list.files(session_dir, full.names = TRUE)), na.rm = TRUE)
-      if (total_size > MAX_SESSION_SIZE) {
-        showNotification("Session file size limit exceeded. Please reduce file sizes.", 
-                        type = "error")
-        return(FALSE)
-      }
-    }
-    return(TRUE)
-  }
-  
-  # FILE TYPE VALIDATION
-  # STRATEGY: Only allow text files to prevent security issues
-  validate_file_content <- function(filepath) {
-    tryCatch({
-      # READ FIRST FEW LINES TO CHECK FORMAT
-      lines <- readLines(filepath, n = 10, warn = FALSE)
-      # CHECK IF IT LOOKS LIKE A FLUORCAM FILE
-      return(length(lines) > 2 && any(grepl("Measurement|Time|Area", lines, ignore.case = TRUE)))
-    }, error = function(e) {
-      return(FALSE)
-    })
-  }
   # ===========================================
   # END OF SERVER FUNCTION
   # ===========================================

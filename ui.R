@@ -12,13 +12,13 @@ source("global.R",  local = TRUE) # Load the global variables and packages
 ui <- dashboardPage(
   # HEADER: Simple title bar for the application
   dashboardHeader(title = "FluorCam Data Analysis Toolbox"),
-  
+
   # SIDEBAR: Empty because we use sidebarLayout inside dashboardBody
   # STRATEGY: This allows more flexibility in layout while keeping dashboard styling
   dashboardSidebar(
     # Empty sidebar since you're using sidebarLayout inside dashboardBody
   ),
-  
+
   # MAIN DASHBOARD BODY
   dashboardBody(
     # CSS STYLING SECTION
@@ -140,7 +140,7 @@ ui <- dashboardPage(
     # - Main panel for results and data display
     fluidPage(
       sidebarLayout(
-        
+
         # ===========================================
         # SIDEBAR PANEL: ALL USER CONTROLS
         # ===========================================
@@ -149,7 +149,7 @@ ui <- dashboardPage(
         # - Collapsible panels reduce visual clutter
         # - Each section builds on the previous one
         sidebarPanel(
-          
+
           # ACCORDION CONTAINER
           # STRATEGY: Bootstrap accordion for organized workflow
           # BENEFIT: Users can focus on one step at a time
@@ -172,7 +172,7 @@ ui <- dashboardPage(
                 # START EXPANDED: This is the first step users need to complete
                 div(id = "collapse1", class = "panel-collapse collapse in",
                     div(class = "panel-body",
-                        
+
                         # CLEAR INSTRUCTIONS
                         # STRATEGY: Prominent alert box explains required format
                         # BENEFIT: Reduces user confusion about file naming
@@ -184,7 +184,7 @@ ui <- dashboardPage(
                             br(), br(),
                             em("Example: Day1_LineA_Plant001.TXT")
                         ),
-                        
+
                         # VARIABLE MAPPING INPUTS
                         # STRATEGY: Three-column layout for clear variable definition
                         # PURPOSE: Map generic VAR1/VAR2/VAR3 to actual experiment variables
@@ -209,7 +209,7 @@ ui <- dashboardPage(
                                  )
                           )
                         ),
-                        
+
                         # FILENAME PREVIEW
                         # STRATEGY: Real-time preview helps users verify their setup
                         # BENEFIT: Immediate feedback prevents file loading errors
@@ -239,15 +239,15 @@ ui <- dashboardPage(
                 # COLLAPSED BY DEFAULT: Users complete Section 1 first
                 div(id = "collapse2", class = "panel-collapse collapse",
                     div(class = "panel-body",
-                        
+
                         # FILE UPLOAD SECTION
                         # STRATEGY: Direct file upload for server deployment
                         # PURPOSE: Allow users to upload their own FluorCam files
                         div(
                           style = "background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;",
-                          h4(icon("upload"), "Upload FluorCam Files", 
+                          h4(icon("upload"), "Upload FluorCam Files",
                              style = "color: #495057; margin-bottom: 15px;"),
-                          
+
                           # FILE UPLOAD INPUT
                           # STRATEGY: Multiple file selection with .txt filter
                           # PURPOSE: Upload all data files at once
@@ -256,17 +256,17 @@ ui <- dashboardPage(
                             label = div(
                               strong("Select FluorCam .TXT files:"),
                               br(),
-                              span("Choose multiple files that follow the naming pattern VAR1_VAR2_VAR3.TXT", 
+                              span("Choose multiple files that follow the naming pattern VAR1_VAR2_VAR3.TXT",
                                    style = "font-size: 12px; color: #6c757d;")
                             ),
                             multiple = TRUE,
                             accept = c(".txt", ".TXT"),
                             width = "100%"
                           ),
-                          
+
                           # UPLOAD STATUS
                           verbatimTextOutput("upload_status"),
-                          
+
                           # FILE PREVIEW
                           conditionalPanel(
                             condition = "output.files_uploaded",
@@ -276,24 +276,24 @@ ui <- dashboardPage(
                             )
                           )
                         ),
-                        
+
                         # FILE PATTERN INPUT
                         # PURPOSE: Allow different file extensions (.TXT, .csv, etc.)
                         textInput("pattern", "File Pattern", 
                                   value = ".TXT",
                                   placeholder = "e.g., .TXT, .csv"),
-                        
+
                         # FILE PREVIEW TOGGLE
                         # STRATEGY: Optional file list preview before loading
                         # BENEFIT: Users can verify correct files will be loaded
-                        actionButton("show_all", "Toggle File List", 
+                        actionButton("show_all", "Toggle File List",
                                      icon = icon("list"),
                                      class = "btn-info btn-sm"),
                         br(), br(),
-                        
+
                         # MAIN LOAD ACTION
                         # STRATEGY: Prominent success-colored button for final action
-                        actionButton("load", "Load Data", 
+                        actionButton("load", "Load Data",
                                      icon = icon("play"),
                                      class = "btn-success btn-block")
                     )
@@ -316,7 +316,7 @@ ui <- dashboardPage(
                 ),
                 div(id = "collapse3", class = "panel-collapse collapse",
                     div(class = "panel-body",
-                        
+
                         # ANALYSIS TYPE SELECTION
                         # STRATEGY: Radio buttons for mutually exclusive choices
                         # PURPOSE: Determines entire analysis workflow
@@ -384,11 +384,11 @@ ui <- dashboardPage(
                         ),
                         uiOutput("dynamic_color_inputs"),
                         hr(),
-                        
+
                         # ANALYSIS EXECUTION
                         # STRATEGY: Warning-colored button indicates significant action
                         # PURPOSE: Execute the configured analysis
-                        actionButton("start_analysis", "Start Analysis", 
+                        actionButton("start_analysis", "Start Analysis",
                                      icon = icon("play"),
                                      class = "btn-warning btn-block")
                     )
@@ -411,20 +411,18 @@ ui <- dashboardPage(
                 ),
                 div(id = "collapse4", class = "panel-collapse collapse",
                     div(class = "panel-body",
-                        
+
                         # STATISTICAL DATA EXPORT
                         # STRATEGY: .zip format with multiple .txt files
                         # BENEFIT: Organized, readable, and universally compatible
                         strong("Statistical Results:"),
                         br(), br(),
-                        textInput("stats_filename", "Filename (without extension)", 
-                                  value = "statistical_results", 
+                        textInput("stats_filename", "Filename (without extension)",
+                                  value = "statistical_results",
                                   placeholder = "Enter filename"),
                         br(),
-                        actionButton("export_stats", 
-                                     "Export Statistical Data (.zip)", 
-                                     icon = icon("file-archive"),
-                                     class = "btn-success btn-block"),
+                        downloadButton("download_stats", "Download Statistical Data",
+                                       class = "btn-primary", icon = icon("download")),
                         
                         hr(),
                         
@@ -433,18 +431,18 @@ ui <- dashboardPage(
                         # PURPOSE: Professional-quality plot output
                         strong("Export Plot:"),
                         br(), br(),
-                        
+
                         # FILENAME AND FORMAT
                         fluidRow(
-                          column(6, 
-                            textInput("plot_filename", "Filename", 
-                                      value = "plot", 
+                          column(6,
+                            textInput("plot_filename", "Filename",
+                                      value = "plot",
                                       placeholder = "Enter filename")
                           ),
                           column(6,
                             # MULTIPLE FORMAT OPTIONS
                             # STRATEGY: Different formats for different use cases
-                            selectInput("plot_format", "Format", 
+                            selectInput("plot_format", "Format",
                                         choices = list(
                                           "PNG (High-res)" = "png",    # General use
                                           "PDF (Print)" = "pdf",       # Publications
@@ -454,17 +452,17 @@ ui <- dashboardPage(
                                         selected = "png")
                           )
                         ),
-                        
+
                         # DIMENSIONS AND UNITS
                         # STRATEGY: Scientific units (cm) by default, with alternatives
                         # PURPOSE: Professional control over plot sizing
                         fluidRow(
                           column(4,
-                            numericInput("plot_width", "Width", 
+                            numericInput("plot_width", "Width",
                                          value = 30, min = 10, max = 50, step = 1)
                           ),
                           column(4,
-                            numericInput("plot_height", "Height", 
+                            numericInput("plot_height", "Height",
                                          value = 20, min = 5, max = 40, step = 1)
                           ),
                           column(4,
@@ -479,11 +477,10 @@ ui <- dashboardPage(
                           )
                         ),
                         br(),
-                        
+
                         # EXPORT ACTION
-                        actionButton("export_plot", "Export Plot", 
-                                     icon = icon("image"),
-                                     class = "btn-primary btn-block")
+                        downloadButton("download_plot", "Download Plot",
+                                       class = "btn-success", icon = icon("image"))
                     )
                 )
             )
@@ -496,13 +493,13 @@ ui <- dashboardPage(
           # STRATEGY: Tabbed interface for organized information display
           # PURPOSE: Separate data overview, results, and help information
           mainPanel(
-            
+
             # TABBED INTERFACE
             # STRATEGY: Logical separation of different information types
             # BENEFIT: Reduces cognitive load and improves navigation
             tabsetPanel(
               id = "main_tabs",
-              
+
               # ===========================================
               # TAB 1: DATA OVERVIEW
               # ===========================================
@@ -511,44 +508,44 @@ ui <- dashboardPage(
               tabPanel("Data Overview", 
                        icon = icon("table"),
                        br(),
-                       
+
                        # FILE INFORMATION
                        # PURPOSE: Show which files were successfully loaded
                        tableOutput("selected_files"),
                        hr(),
-                       
+
                        # TABLE TOGGLE BUTTON
                        # STRATEGY: User control over data display level
                        # PURPOSE: Preview (5 rows) vs full table view
                        uiOutput("toggle_button"),
                        br(),
-                       
+
                        # MAIN DATA TABLE
                        # STRATEGY: DT datatable for interactive features
                        # FEATURES: Horizontal scroll, filtering, pagination
                        DT::dataTableOutput("processed_data")
               ),
-              
+
               # ===========================================
               # TAB 2: ANALYSIS RESULTS
               # ===========================================
               # PURPOSE: Display analysis outputs and visualizations
               # STRATEGY: Information boxes + main plot display
-              tabPanel("Analysis Results", 
+              tabPanel("Analysis Results",
                        icon = icon("chart-line"),
                        br(),
-                       
+
                        # INFORMATION BOXES
                        # STRATEGY: Key information displayed prominently
                        fluidRow(
                          # SELECTED VARIABLE INFO
-                         column(6, 
+                         column(6,
                            div(class = "info-box",
                              h4("Selected Variable"),
                              textOutput("selectedValue")
                            )
                          ),
-                         
+
                          # NORMALITY TEST RESULTS
                          # STRATEGY: Conditional display - only for Bar plots
                          # WHY: Line charts don't use normality testing
@@ -557,13 +554,13 @@ ui <- dashboardPage(
                            column(6,
                              div(class = "info-box",
                                h4("Normality Test"),
-                               verbatimTextOutput("normality_result")
+                               verbatimTextOutput("normality_text")
                              )
                            )
                          )
                        ),
                        hr(),
-                       
+
                        # MAIN PLOT DISPLAY
                        # STRATEGY: Fixed height for consistent layout
                        # CSS: Responsive sizing handled in stylesheet above
@@ -575,7 +572,7 @@ ui <- dashboardPage(
               # ===========================================
               # PURPOSE: Comprehensive user documentation
               # STRATEGY: Markdown file for easy editing and formatting
-              tabPanel("Help", 
+              tabPanel("Help",
                        icon = icon("question-circle"),
                        includeMarkdown("help.md")
               )
