@@ -101,21 +101,6 @@ if (length(not_installed_packages) > 0) {
   })
 } else {
   cat("✓ All required packages are already installed.\n\n")
-  cat("Installing missing packages:", length(not_installed_packages), "packages\n")
-  cat("Packages to install:", paste(not_installed_packages, collapse = ", "), "\n")
-  cat("This may take a few minutes...\n\n")
-
-  # ENHANCED INSTALLATION WITH ERROR HANDLING
-  tryCatch({
-    install.packages(not_installed_packages, dependencies = TRUE)
-    cat("✓ Package installation completed successfully!\n\n")
-  }, error = function(e) {
-    cat("✗ Error during package installation:\n")
-    cat(e$message, "\n")
-    stop("Please resolve package installation issues before continuing.")
-  })
-} else {
-  cat("✓ All required packages are already installed.\n\n")
 }
 
 # ===========================================
