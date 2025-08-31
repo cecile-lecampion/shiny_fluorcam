@@ -185,6 +185,44 @@ server <- function(input, output, session) {
   # REMOVE the directory display output (output$dirpath) as it's no longer needed
 
   # ===========================================
+  # SECURITY AND RESOURCE MANAGEMENT
+  # ===========================================
+  # STRATEGY: Implement comprehensive security and resource limits
+  # PURPOSE: Protect server resources and ensure fair usage
+
+  # FILE SIZE LIMITS
+  # STRATEGY: Prevent abuse through large file uploads
+  # Maximum total upload size per session
+  MAX_SESSION_SIZE <- 100 * 1024 * 1024  # 100 MB
+
+  # VALIDATE SESSION SIZE
+  validate_session_size <- function() {
+    if (dir.exists(session_dir)) {
+      total_size <- sum(file.size(list.files(session_dir, full.names = TRUE)), na.rm = TRUE)
+      if (total_size > MAX_SESSION_SIZE) {
+        showNotification("Session file size limit exceeded. Please reduce file sizes.",
+                        type = "error")
+        return(FALSE)
+      }
+    }
+    return(TRUE)
+  }
+
+  # FILE TYPE VALIDATION
+  # STRATEGY: Only allow text files to prevent security issues
+  validate_file_content <- function(filepath) {
+    tryCatch({
+      # READ FIRST FEW LINES TO CHECK FORMAT
+      lines <- readLines(filepath, n = 10, warn = FALSE)
+      # CHECK IF IT LOOKS LIKE A FLUORCAM FILE
+      return(length(lines) > 2 && any(grepl("Measurement|Time|Area", lines, ignore.case = TRUE)))
+    }, error = function(e) {
+      return(FALSE)
+    })
+  }
+
+
+  # ===========================================
   # SECTION 2: FILE PREVIEW FUNCTIONALITY
   # ===========================================
   # STRATEGY: Allow users to preview files before loading
