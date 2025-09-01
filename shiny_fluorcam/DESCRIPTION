@@ -1,8 +1,0 @@
-Package: shiny_fluorcam
-Type: Package
-Title: What the Package Does (Title Case)
-Version: 0.1.0
-Authors@R: person("Your", "Name", email = "you@example.com", role = c("aut", "cre"))
-Description: A short description of what the package does.
-License: What license it uses
-Suggests: testthat
