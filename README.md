@@ -19,22 +19,24 @@ Key features include:
 For individual use on your personal computer:
 
 1. **Install R and RStudio** (if not already installed)
+
 2. **Clone the repository**:
    ```bash
    git clone https://github.com/cecile-lecampion/shiny_fluorcam.git
    cd shiny_fluorcam
    ```
-3. **Install dependencies**:
-   Open R/RStudio and run:
-   ```r
-   source("global.R")
-   ```
-   This will automatically install all required packages.
+
+3. **Run App**:
+   Open RStudio :
+
+   Go to File -> Open File
+
+   Select the App.R in the shiny_fluorcam directory
 
 4. **Launch the application**:
-   ```r
-   shiny::runApp()
-   ```
+
+   Click the “Run App” button in the pane at the top left of the RStudio IDE.
+
    The application will open in your default web browser.
 
 ### Method 2: Server Installation (Ubuntu 24)
