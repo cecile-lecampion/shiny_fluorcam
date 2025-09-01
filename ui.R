@@ -12,11 +12,11 @@ source("global.R",  local = TRUE) # Load the global variables and packages
 
 ui <- dashboardPage(
   # HEADER: Simple title bar for the application
-  dashboardHeader(title = "FluorCam Data Analysis Toolbox"),
+  dashboardHeader(title = "FluorCam Toolbox"),
 
   # SIDEBAR: Empty because we use sidebarLayout inside dashboardBody
   # STRATEGY: This allows more flexibility in layout while keeping dashboard styling
-  dashboardSidebar(
+  dashboardSidebar(disable = TRUE
     # Empty sidebar since you're using sidebarLayout inside dashboardBody
   ),
 
@@ -139,6 +139,91 @@ ui <- dashboardPage(
         .form-control:focus {
           border-color: #3c8dbc;
           box-shadow: 0 0 0 0.2rem rgba(60, 141, 188, 0.25);
+        }
+        
+        /* HELP TAB SCROLLABLE CONTAINER */
+        .help-container {
+          height: 70vh; /* 70% de la hauteur de l'écran */
+          overflow-y: auto;
+          overflow-x: hidden;
+          padding: 20px;
+          background: white;
+          border-radius: 8px;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+          margin: 10px 0;
+        }
+        
+        /* Améliorer l'apparence de la scrollbar */
+        .help-container::-webkit-scrollbar {
+          width: 8px;
+        }
+        
+        .help-container::-webkit-scrollbar-track {
+          background: #f1f1f1;
+          border-radius: 4px;
+        }
+        
+        .help-container::-webkit-scrollbar-thumb {
+          background: #c1c1c1;
+          border-radius: 4px;
+        }
+        
+        .help-container::-webkit-scrollbar-thumb:hover {
+          background: #a8a8a8;
+        }
+        
+        /* Styles pour le contenu markdown dans le conteneur */
+        .help-container h1, .help-container h2, .help-container h3 {
+          color: #3c8dbc;
+          border-bottom: 2px solid #e9ecef;
+          padding-bottom: 8px;
+          margin-top: 30px;
+          margin-bottom: 15px;
+        }
+        
+        .help-container h1 {
+          font-size: 28px;
+        }
+        
+        .help-container h2 {
+          font-size: 24px;
+        }
+        
+        .help-container h3 {
+          font-size: 20px;
+        }
+        
+        .help-container p {
+          line-height: 1.6;
+          margin-bottom: 15px;
+          text-align: justify;
+        }
+        
+        .help-container code {
+          background-color: #f8f9fa;
+          border: 1px solid #e9ecef;
+          border-radius: 4px;
+          padding: 2px 6px;
+          font-family: 'Courier New', monospace;
+          color: #e83e8c;
+        }
+        
+        .help-container pre {
+          background-color: #f8f9fa;
+          border: 1px solid #e9ecef;
+          border-radius: 4px;
+          padding: 15px;
+          overflow-x: auto;
+        }
+        
+        .help-container ul, .help-container ol {
+          margin-left: 20px;
+          margin-bottom: 15px;
+        }
+        
+        .help-container li {
+          margin-bottom: 8px;
+          line-height: 1.5;
         }
       "))
     ),
@@ -578,10 +663,15 @@ ui <- dashboardPage(
               # TAB 3: HELP DOCUMENTATION
               # ===========================================
               # PURPOSE: Comprehensive user documentation
-              # STRATEGY: Markdown file for easy editing and formatting
+              # STRATEGY: Scrollable container for better navigation
               tabPanel("Help",
                        icon = icon("question-circle"),
-                       includeMarkdown("help.md")
+                       br(),
+                       
+                       # CONTENEUR SCROLLABLE POUR LE HELP
+                       div(class = "help-container",
+                           includeMarkdown("help.md")
+                       )
               )
             )
           )
