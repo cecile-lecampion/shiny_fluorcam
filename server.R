@@ -235,17 +235,86 @@ server <- function(input, output, session) {
   observeEvent(input$show_all, { show_all_files(!show_all_files()) })
   
   # DYNAMIC FILE LIST DISPLAY (MODIFIED)
-  # STRATEGY: Show uploaded files instead of directory files
-  # PURPOSE: Preview uploaded files before processing
+  # STRATEGY: Show uploaded files automatically in main panel
+  # PURPOSE: Direct preview of uploaded files without toggle button
   output$selected_files <- renderTable({
-    req(input$pattern)  # Only require pattern, not directory
-    files <- list.files(path = session_dir, pattern = input$pattern, full.names = TRUE)
+    # Show files from session directory (uploaded files)
+    files <- list.files(path = session_dir, pattern = "\\.(txt|TXT)$", full.names = TRUE)
+    
+    # Apply pattern filter if specified
+    if (!is.null(input$pattern) && input$pattern != "") {
+      files <- files[grepl(input$pattern, basename(files), ignore.case = TRUE)]
+    }
+    
     # CONDITIONAL DISPLAY: Show 5 or all based on toggle state
     if (!show_all_files()) files <- head(files, 5)
+    
     if (length(files) > 0) {
-      data.frame(Files = basename(files))  # Show only filenames, not full paths
+      data.frame(
+        Files = basename(files),
+        `Size (KB)` = round(file.size(files) / 1024, 1),
+        check.names = FALSE
+      )
     } else {
-      data.frame(Files = "No files match the pattern")
+      if (!is.null(input$pattern) && input$pattern != "") {
+        data.frame(Files = "No uploaded files match the pattern", `Size (KB)` = NA, check.names = FALSE)
+      } else {
+        data.frame(Files = "No files uploaded yet", `Size (KB)` = NA, check.names = FALSE)
+      }
+    }
+  })
+  
+  # REACTIVE TRIGGER FOR FILE LIST UPDATE
+  # STRATEGY: Update file list when files are uploaded
+  # PURPOSE: Automatic refresh of file display
+  observeEvent(input$uploaded_files, {
+    # Force update of the file list display
+    output$selected_files <- renderTable({
+      files <- list.files(path = session_dir, pattern = "\\.(txt|TXT)$", full.names = TRUE)
+      
+      # Apply pattern filter if specified
+      if (!is.null(input$pattern) && input$pattern != "") {
+        files <- files[grepl(input$pattern, basename(files), ignore.case = TRUE)]
+      }
+      
+      # CONDITIONAL DISPLAY: Show 5 or all based on toggle state
+      if (!show_all_files()) files <- head(files, 5)
+      
+      if (length(files) > 0) {
+        data.frame(
+          Files = basename(files),
+          `Size (KB)` = round(file.size(files) / 1024, 1),
+          check.names = FALSE
+        )
+      } else {
+        if (!is.null(input$pattern) && input$pattern != "") {
+          data.frame(Files = "No uploaded files match the pattern", `Size (KB)` = NA, check.names = FALSE)
+        } else {
+          data.frame(Files = "No files uploaded yet", `Size (KB)` = NA, check.names = FALSE)
+        }
+      }
+    })
+  })
+
+  # UPDATE THE TOGGLE BUTTON TEXT
+  # STRATEGY: Show appropriate text for file list toggle
+  # PURPOSE: Clear indication of current state
+  observeEvent(show_all_files(), {
+    files <- list.files(path = session_dir, pattern = "\\.(txt|TXT)$")
+    if (length(files) > 5) {
+      button_text <- if(show_all_files()) "Show first 5 files" else "Show all files"
+      updateActionButton(session, "show_all", label = button_text)
+    }
+  })
+
+  # CONDITIONAL SHOW ALL BUTTON
+  # STRATEGY: Only show toggle button when there are more than 5 files
+  # PURPOSE: Clean UI when toggle is not needed
+  output$show_all_button <- renderUI({
+    files <- list.files(path = session_dir, pattern = "\\.(txt|TXT)$")
+    if (length(files) > 5) {
+      button_text <- if(show_all_files()) "Show first 5 files" else "Show all files"
+      actionButton("show_all", button_text, class = "btn-info btn-sm")
     }
   })
   
@@ -1033,6 +1102,9 @@ server <- function(input, output, session) {
       # STRATEGY: Format-specific export with user-defined dimensions
       # PURPOSE: High-quality output suitable for different use cases
       tryCatch({
+        # STORE FILENAME FOR NOTIFICATION
+        export_filename <- paste0(tools::file_path_sans_ext(input$plot_filename), ".", input$plot_format)
+        
         ggsave(
           filename = file,
           plot = current_plot(),
@@ -1041,7 +1113,7 @@ server <- function(input, output, session) {
           units = input$plot_units,
           dpi = if(input$plot_format %in% c("png", "jpg", "jpeg")) 300 else NULL
         )
-        showNotification(paste("Plot exported successfully as", filename, "!"),
+        showNotification(paste("Plot exported successfully as", export_filename, "!"),
                         type = "message")
       }, error = function(e) {
         showNotification(paste("Error exporting plot:", e$message), type = "error")

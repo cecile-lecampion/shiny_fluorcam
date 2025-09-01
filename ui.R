@@ -9,6 +9,7 @@
 
 source("global.R",  local = TRUE) # Load the global variables and packages
 
+
 ui <- dashboardPage(
   # HEADER: Simple title bar for the application
   dashboardHeader(title = "FluorCam Data Analysis Toolbox"),
@@ -30,13 +31,11 @@ ui <- dashboardPage(
     tags$head(
       tags$style(HTML("
         /* Dashboard background improvements */
-        /* STRATEGY: Light background for better readability */
         .content-wrapper, .right-side {
           background-color: #f8f9fa;
         }
         
         /* Improve info boxes in Analysis Results */
-        /* STRATEGY: Card-like design for better information hierarchy */
         .info-box {
           background: white;
           padding: 20px;
@@ -47,24 +46,41 @@ ui <- dashboardPage(
         }
         
         /* Button improvements */
-        /* STRATEGY: Consistent button spacing and rounded corners */
         .btn-block {
           margin-bottom: 15px;
           border-radius: 5px;
         }
         
-        /* Panel heading improvements */
-        /* STRATEGY: Interactive hover effects to indicate clickable accordion panels */
+        /* ACCORDÉON CLIQUABLE - VERSION CORRIGÉE */
         .panel-heading {
-          cursor: pointer;
-          transition: background-color 0.3s ease;
+          cursor: pointer !important;
+          transition: background-color 0.3s ease !important;
+          padding: 0 !important;
         }
+        
         .panel-heading:hover {
-          background-color: #2c5282 !important;
+          background-color: rgba(0, 123, 255, 0.1) !important;
+        }
+        
+        .panel-heading a {
+          display: block !important;
+          width: 100% !important;
+          padding: 15px 20px !important;
+          text-decoration: none !important;
+          color: inherit !important;
+        }
+        
+        .panel-heading a:hover {
+          text-decoration: none !important;
+          color: inherit !important;
+        }
+        
+        .panel-title {
+          margin: 0 !important;
+          width: 100% !important;
         }
         
         /* Alert boxes improvements */
-        /* STRATEGY: Modern alert design without harsh borders */
         .alert {
           border-radius: 6px;
           border: none;
@@ -72,7 +88,6 @@ ui <- dashboardPage(
         }
         
         /* Tab improvements */
-        /* STRATEGY: Branded tab design matching overall color scheme */
         .nav-tabs {
           border-bottom: 2px solid #3c8dbc;
         }
@@ -83,7 +98,6 @@ ui <- dashboardPage(
         }
         
         /* Table improvements */
-        /* STRATEGY: Clean table design with subtle shadows */
         .table {
           background: white;
           border-radius: 5px;
@@ -91,28 +105,24 @@ ui <- dashboardPage(
           box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
         
-        /* FIXED: Plot container improvements */
-        /* STRATEGY: Solve plot overflow issues and ensure responsive design */
-        /* PROBLEM SOLVED: Plots were extending beyond container boundaries */
+        /* Plot container improvements */
         #plot_result {
           background: white;
           padding: 20px;
           border-radius: 8px;
           box-shadow: 0 2px 8px rgba(0,0,0,0.1);
           margin: 15px 0;
-          overflow: hidden;  /* Prevents plot from extending beyond container */
+          overflow: hidden;
           width: 100%;
-          box-sizing: border-box;  /* Includes padding in width calculation */
+          box-sizing: border-box;
         }
         
-        /* Ensure plot fits within container */
         #plot_result .shiny-plot-output {
           width: 100% !important;
           height: auto !important;
           max-width: 100%;
         }
         
-        /* Fix plot image sizing */
         #plot_result img {
           max-width: 100%;
           height: auto;
@@ -121,7 +131,6 @@ ui <- dashboardPage(
         }
         
         /* Input field improvements */
-        /* STRATEGY: Modern input styling with focus effects */
         .form-control {
           border-radius: 4px;
           border: 1px solid #ddd;
@@ -286,9 +295,7 @@ ui <- dashboardPage(
                         # FILE PREVIEW TOGGLE
                         # STRATEGY: Optional file list preview before loading
                         # BENEFIT: Users can verify correct files will be loaded
-                        actionButton("show_all", "Toggle File List",
-                                     icon = icon("list"),
-                                     class = "btn-info btn-sm"),
+                        uiOutput("show_all_button"),  # Bouton conditionnel au lieu de actionButton fixe
                         br(), br(),
 
                         # MAIN LOAD ACTION
