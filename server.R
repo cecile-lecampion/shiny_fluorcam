@@ -1111,7 +1111,7 @@ server <- function(input, output, session) {
           width = as.numeric(input$plot_width),
           height = as.numeric(input$plot_height),
           units = input$plot_units,
-          dpi = if(input$plot_format %in% c("png", "jpg", "jpeg")) 300 else NULL
+          dpi = 300 
         )
         showNotification(paste("Plot exported successfully as", export_filename, "!"),
                         type = "message")
