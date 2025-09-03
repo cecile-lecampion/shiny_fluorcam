@@ -9,11 +9,17 @@
 
 source("global.R",  local = TRUE) # Load the global variables and packages
 
-
 ui <- dashboardPage(
   # HEADER: Simple title bar for the application
-  dashboardHeader(title = "FluorCam Toolbox"),
-
+  dashboardHeader(
+    title = div(
+      class = "brand",
+      tags$img(src = "fluorcam_toolbox_logo.png", alt = "FluorCam", class = "brand-logo"),
+      span("FluorCam Toolbox", class = "brand-title")
+    ),
+    titleWidth = 360
+  ),
+  
   # SIDEBAR: Empty because we use sidebarLayout inside dashboardBody
   # STRATEGY: This allows more flexibility in layout while keeping dashboard styling
   dashboardSidebar(disable = TRUE
@@ -30,12 +36,46 @@ ui <- dashboardPage(
     # - Fixed plot container sizing issues
     tags$head(
       tags$style(HTML("
+        /* Header brand */
+        .main-header .logo {
+          display: flex !important;
+          align-items: center;
+          padding: 0 15px;
+        }
+        .brand {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .brand-logo {
+          max-height: 32px;   /* s'intègre bien dans un header de 50px */
+          width: auto;
+          display: block;
+        }
+        .brand-title {
+          font-weight: 600;
+          font-size: 18px;
+          line-height: 1;
+          letter-spacing: 0.2px;
+          color: #fff; /* conserve le contraste du header AdminLTE */
+        }
+        /* Ajustements mobiles */
+        @media (max-width: 480px) {
+          .brand-logo { max-height: 24px; }
+          .brand-title { font-size: 16px; }
+        }
+        
         /* Dashboard background improvements */
+        /* STRATEGY: Light background for better readability */
         .content-wrapper, .right-side {
           background-color: #f8f9fa;
         }
         
         /* Improve info boxes in Analysis Results */
+        /* STRATEGY: Card-like design for better information hierarchy */
         .info-box {
           background: white;
           padding: 20px;
@@ -46,12 +86,14 @@ ui <- dashboardPage(
         }
         
         /* Button improvements */
+        /* STRATEGY: Consistent button spacing and rounded corners */
         .btn-block {
           margin-bottom: 15px;
           border-radius: 5px;
         }
         
-        /* ACCORDÉON CLIQUABLE - VERSION CORRIGÉE */
+        /* Panel heading improvements */
+        /* STRATEGY: Interactive hover effects to indicate clickable accordion panels */
         .panel-heading {
           cursor: pointer !important;
           transition: background-color 0.3s ease !important;
@@ -81,6 +123,7 @@ ui <- dashboardPage(
         }
         
         /* Alert boxes improvements */
+        /* STRATEGY: Modern alert design without harsh borders */
         .alert {
           border-radius: 6px;
           border: none;
@@ -88,6 +131,7 @@ ui <- dashboardPage(
         }
         
         /* Tab improvements */
+        /* STRATEGY: Branded tab design matching overall color scheme */
         .nav-tabs {
           border-bottom: 2px solid #3c8dbc;
         }
@@ -98,6 +142,7 @@ ui <- dashboardPage(
         }
         
         /* Table improvements */
+        /* STRATEGY: Clean table design with subtle shadows */
         .table {
           background: white;
           border-radius: 5px;
@@ -105,24 +150,28 @@ ui <- dashboardPage(
           box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
         
-        /* Plot container improvements */
+        /* FIXED: Plot container improvements */
+        /* STRATEGY: Solve plot overflow issues and ensure responsive design */
+        /* PROBLEM SOLVED: Plots were extending beyond container boundaries */
         #plot_result {
           background: white;
           padding: 20px;
           border-radius: 8px;
           box-shadow: 0 2px 8px rgba(0,0,0,0.1);
           margin: 15px 0;
-          overflow: hidden;
+          overflow: hidden;  /* Prevents plot from extending beyond container */
           width: 100%;
-          box-sizing: border-box;
+          box-sizing: border-box;  /* Includes padding in width calculation */
         }
         
+        /* Ensure plot fits within container */
         #plot_result .shiny-plot-output {
           width: 100% !important;
           height: auto !important;
           max-width: 100%;
         }
         
+        /* Fix plot image sizing */
         #plot_result img {
           max-width: 100%;
           height: auto;
@@ -131,6 +180,7 @@ ui <- dashboardPage(
         }
         
         /* Input field improvements */
+        /* STRATEGY: Modern input styling with focus effects */
         .form-control {
           border-radius: 4px;
           border: 1px solid #ddd;
