@@ -1,7 +1,7 @@
 # FluorCam Toolbox
 
 <div align="center">
-  <img src=".images/README/fluorcam_toolbox_logo.png" alt="FluorCam Toolbox Logo" width="300">
+  <img src=".images/README/fluorcam_toolbox_logo.png" alt="FluorCam Toolbox Logo" width="200">
 </div>
 
 ## Description
