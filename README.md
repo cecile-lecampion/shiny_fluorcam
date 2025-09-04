@@ -1,6 +1,6 @@
 # FluorCam Toolbox
 
-<img src=".images/README/fluorcam_toolbox_logo.png" style="zoom:67%;" />
+<img src=".images/README/fluorcam_toolbox_logo.png" style="zoom: 33%;" />
 
 ## Description
 
