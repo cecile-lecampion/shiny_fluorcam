@@ -4,9 +4,7 @@
   <img src=".images/README/fluorcam_toolbox_logo.png" alt="FluorCam Toolbox Logo" width="200">
 </div>
 
-<div align="center">
-  <img src=".images/README/fluorcam_toolbox_logo.png" alt="FluorCam Toolbox Logo" width="300">
-</div>
+
 
 ## Description
 
