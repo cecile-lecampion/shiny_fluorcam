@@ -51,7 +51,7 @@ process_data_files <- function(pattern, var1, var2, var3, dirpath) {
     } else {
       # ERROR HANDLING
       # STRATEGY: Informative error message for insufficient data
-      stop("Le fichier ne contient pas assez de lignes.")
+      stop("The file does not contain enough lines.")
     }
 
     # PARSE DATA TABLE
@@ -113,6 +113,8 @@ process_data_files <- function(pattern, var1, var2, var3, dirpath) {
 
   ## Alternative method to data.table use
   ## REPLACE data.table::transpose with base R approach
+  # STRATEGY: Base R alternative for environments without data.table
+  # PURPOSE: Provide fallback option for different deployment scenarios
   # Liste <- lapply(Liste, function(df) {
   #   # Convert to matrix, transpose, then back to data.frame
   #   df_t <- as.data.frame(t(df[-1]))  # Exclude first column (X), transpose rest
@@ -195,23 +197,36 @@ check_normality <- function(shapiro_df) {
 # OUTPUT: Dataframe with groups and their significance letters
 
 generate_cld_parametric <- function(tukey_df, var1_col, var2_col) {
-  # Step 1: Extract unique values of the grouping variables
+  # STEP 1: EXTRACT UNIQUE VALUES
+  # STRATEGY: Get all unique values of the grouping variable (facet variable)
+  # PURPOSE: Process each facet group separately
   unique_var1 <- unique(tukey_df[[var1_col]])
 
-  # Step 2: Process each group separately and combine results
+  # STEP 2: INITIALIZE RESULT STORAGE
+  # STRATEGY: Use list to collect results from each group
+  # PURPOSE: Flexible storage that can handle variable group sizes
   result_list <- list()
 
+  # STEP 3: PROCESS EACH FACET GROUP
+  # STRATEGY: Loop through each unique facet value
+  # PURPOSE: Generate separate letter displays for each facet panel
   for (group_val in unique_var1) {
-    # Filter data for this group
+    # FILTER DATA FOR CURRENT GROUP
+    # STRATEGY: Subset tukey results for current facet level
+    # PURPOSE: Generate CLD specific to this experimental condition
     group_data <- tukey_df[tukey_df[[var1_col]] == group_val, ]
 
-    # Generate letters for this group
+    # GENERATE LETTERS FOR THIS GROUP
+    # STRATEGY: Use multcompView package for standard CLD generation
+    # PURPOSE: Convert p-values to letter groupings following statistical conventions
     letters_result <- multcompView::multcompLetters(
       setNames(group_data$p.adj, paste(group_data$group1, group_data$group2, sep = "-")),
       Letters = letters
     )$Letters
 
-    # Convert to data frame
+    # CONVERT TO DATA FRAME FORMAT
+    # STRATEGY: Structure results in consistent dataframe format
+    # PURPOSE: Enable easy merging with plotting data
     group_result <- data.frame(
       group_value = group_val,
       group_var = names(letters_result),
@@ -219,26 +234,35 @@ generate_cld_parametric <- function(tukey_df, var1_col, var2_col) {
       stringsAsFactors = FALSE
     )
 
-    # Add to results list
+    # ADD TO RESULTS COLLECTION
+    # STRATEGY: Accumulate results in list for later combination
+    # PURPOSE: Handle variable number of groups across facets
     result_list[[length(result_list) + 1]] <- group_result
   }
 
-  # Combine all results
+  # STEP 4: COMBINE ALL RESULTS
+  # STRATEGY: Row-bind all group results into single dataframe
+  # PURPOSE: Single dataframe for easy merging with plot data
   combined_result <- do.call(rbind, result_list)
 
-  # Rename columns to match expected names
+  # STEP 5: RENAME COLUMNS TO MATCH EXPECTED FORMAT
+  # STRATEGY: Use user-specified variable names for column names
+  # PURPOSE: Consistent column naming for downstream functions
   names(combined_result)[1] <- var1_col
   names(combined_result)[2] <- var2_col
 
-  # DEBUG: Print final result
+  # DEBUG OUTPUT
+  # STRATEGY: Provide debugging information for troubleshooting
+  # PURPOSE: Help identify issues during development and testing
   cat("\nFinal result before returning:\n")
   print(combined_result)
   cat("Final column names:", paste(colnames(combined_result), collapse=", "), "\n")
 
   return(combined_result)
 }
+
 # Generate CLD values for non-parametric data
-#=======================================================================================================================================
+#========================================================================================================================================
 # STRATEGY: Process Dunn test results into compact letter display format
 # PURPOSE: Same as parametric version but for non-parametric post-hoc tests
 # INPUT: Dunn test results from rstatix::dunn_test()
@@ -247,16 +271,22 @@ generate_cld_parametric <- function(tukey_df, var1_col, var2_col) {
 generate_cld_nonparametric <- function(dunn_df, var1_col, var2_col) {
   dunn_df %>%
     # GROUP BY FACET VARIABLE
+    # STRATEGY: Process each facet level separately
+    # PURPOSE: Generate separate letter displays for each experimental condition
     dplyr::group_by(.data[[var1_col]]) %>%
     dplyr::summarise(
-      # MULTCOMP LETTER GENERATION (same logic as parametric)
+      # MULTCOMP LETTER GENERATION
+      # STRATEGY: Same logic as parametric version using multcompView
+      # PURPOSE: Consistent letter generation across parametric and non-parametric analyses
       cld = list(multcompView::multcompLetters(
         setNames(p.adj, paste(group1, group2, sep = "-")),
         Letters = letters
       )$Letters),
       .groups = 'drop'  # Remove grouping after summarise
     ) %>%
-    # UNNEST AND RESTRUCTURE - use modern syntax consistently
+    # UNNEST AND RESTRUCTURE
+    # STRATEGY: Convert nested list structure to flat dataframe
+    # PURPOSE: Consistent output format matching parametric version
     tidyr::unnest_longer(cld) %>%
     dplyr::mutate(!!var2_col := names(cld)) %>%
     dplyr::select(all_of(var1_col), all_of(var2_col), cld) # Select final columns
@@ -354,7 +384,6 @@ analyse_barplot <- function(
     # STRATEGY: Full parametric pipeline with ANOVA and Tukey HSD
     # PURPOSE: When normality assumptions are met
 
-
     # SUMMARY STATISTICS
     # STRATEGY: Use summarise for mean ± standard error
     # PURPOSE: Generate values for bar heights and error bars
@@ -374,10 +403,14 @@ analyse_barplot <- function(
     # STRATEGY: Use formula approach which is more reliable with rstatix
     # PURPOSE: Test for overall differences before post-hoc testing
 
-    # generate dynamic formula for anova_test
+    # GENERATE DYNAMIC FORMULA FOR ANOVA
+    # STRATEGY: Programmatically construct formula from variable names
+    # PURPOSE: Flexible function that works with any column names
     formule <- as.formula(paste(measure_col, "~", var2))
 
-    # Group by var1 and pass the formula to anova_test
+    # GROUP BY FACET VARIABLE AND APPLY ANOVA
+    # STRATEGY: Separate ANOVA for each facet level
+    # PURPOSE: Statistical testing within each experimental condition
     anova_result <- data %>%
       group_by(.data[[var1]]) %>%
       rstatix::anova_test(formule)
@@ -386,10 +419,14 @@ analyse_barplot <- function(
     # STRATEGY: Use formula approach for rstatix compatibility
     # PURPOSE: Identify which specific groups differ
 
-    # generate dynamic formula for Tukey HSD
+    # GENERATE DYNAMIC FORMULA FOR TUKEY HSD
+    # STRATEGY: Same formula construction as ANOVA
+    # PURPOSE: Consistent approach across statistical tests
     formule <- as.formula(paste(measure_col, "~", var2))
 
-    # Group by var1 and pass the formula to tukey_hsd
+    # GROUP BY FACET VARIABLE AND APPLY TUKEY TEST
+    # STRATEGY: Separate post-hoc testing for each facet level
+    # PURPOSE: Pairwise comparisons within each experimental condition
     tukey_results <- data %>%
       group_by(.data[[var1]]) %>%
       rstatix::tukey_hsd(formule)
@@ -460,7 +497,7 @@ analyse_barplot <- function(
       geom_text(
                 aes(x = .data[[var2]], y = ci_upper + (0.15 * ci_upper), label = cld),
                 na.rm = TRUE,
-                size = 3,
+                size = 6,
                 inherit.aes = TRUE) +
 
       # THEME AND STYLING
@@ -474,10 +511,11 @@ analyse_barplot <- function(
         panel.background = element_rect(fill = 'transparent', color = NA),
         plot.background = element_rect(fill = 'transparent', color = NA),
         axis.text.y = element_text(vjust = 1),
+        text = element_text(size = 18),
         legend.position = "none",  # Remove legend (redundant with x-axis)
         strip.background = element_blank(),
         strip.placement = "outside",
-        strip.text = element_text(face = "plain", size = 10, color = "black", hjust = 0.5)
+        strip.text = element_text(face = "plain", size = 20, color = "black", hjust = 0.5)
       ) +
 
       # FACETING
@@ -529,9 +567,14 @@ analyse_barplot <- function(
     # STRATEGY: Non-parametric equivalent of ANOVA
     # PURPOSE: Test for overall differences between groups
 
-    # generate dynamic formula for anova_test
+    # GENERATE DYNAMIC FORMULA FOR KRUSKAL-WALLIS
+    # STRATEGY: Same formula construction approach as parametric version
+    # PURPOSE: Consistent approach across statistical methods
     formule <- as.formula(paste(measure_col, "~", var2))
 
+    # APPLY KRUSKAL-WALLIS TEST
+    # STRATEGY: Group by facet variable for separate tests
+    # PURPOSE: Non-parametric testing within each experimental condition
     kruskal_pval <- data %>%
       group_by(.data[[var1]]) %>%
       rstatix::kruskal_test(formule) %>%
@@ -546,9 +589,15 @@ analyse_barplot <- function(
       # DUNN POST-HOC TESTING
       # STRATEGY: Non-parametric pairwise comparison
       # PURPOSE: Identify which specific groups differ
-      # generate dynamic formula for anova_test
+      
+      # GENERATE DYNAMIC FORMULA FOR DUNN TEST
+      # STRATEGY: Consistent formula approach across all tests
+      # PURPOSE: Maintain code consistency and reliability
       formule <- as.formula(paste(measure_col, "~", var2))
 
+      # APPLY DUNN TEST WITH MULTIPLE COMPARISON CORRECTION
+      # STRATEGY: Benjamini-Hochberg correction for false discovery rate control
+      # PURPOSE: Control type I error rate in multiple comparisons
       pval_dunn <- data %>%
         group_by(.data[[var1]]) %>%  # Separate tests for each facet
         rstatix::dunn_test((formule),
@@ -556,13 +605,14 @@ analyse_barplot <- function(
         ) %>%
         as.data.frame()  # Convert to standard dataframe for compatibility
 
-
       # COMPACT LETTER DISPLAY (NON-PARAMETRIC)
       # STRATEGY: Generate letters from Dunn test results
       # PURPOSE: Visual grouping for non-parametric results
       cld_table_nonparametric <- generate_cld_nonparametric(pval_dunn, var1, var2)
 
       # MERGE AND PREPARE PLOTTING DATA
+      # STRATEGY: Combine statistical results with summary statistics
+      # PURPOSE: Single dataframe containing all information for plotting
       df2 <- merge(conf_int, cld_table_nonparametric, by = c(var2, var1), all.x = TRUE)
       names(df2)[names(df2) == "Median"] <- measure_col
 
@@ -617,9 +667,11 @@ analyse_barplot <- function(
         # STRATEGY: Position relative to confidence intervals
         # PURPOSE: Clear statistical grouping indication
         geom_text(aes(x = .data[[var2]], y = Percentile.upper + (0.15 * Percentile.upper), label = cld),
-                  size = 3, inherit.aes = TRUE) +
+                  size = 6, inherit.aes = TRUE) +
 
         # THEME (SAME AS PARAMETRIC)
+        # STRATEGY: Consistent visual styling across analysis types
+        # PURPOSE: Professional appearance regardless of statistical method
         theme_classic() +
         theme(
           axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
@@ -628,10 +680,11 @@ analyse_barplot <- function(
           panel.background = element_rect(fill = 'transparent', color = NA),
           plot.background = element_rect(fill = 'transparent', color = NA),
           axis.text.y = element_text(vjust = 1),
+          text = element_text(size = 18),
           legend.position = "none",
           strip.background = element_blank(),
           strip.placement = "outside",
-          strip.text = element_text(face = "plain", size = 10, color = "black", hjust = 0.5)
+          strip.text = element_text(face = "plain", size = 20, color = "black", hjust = 0.5)
         ) +
         facet_wrap(as.formula(paste("~", var1)), nrow = 1, scales = "free_y") +
         labs(x = var1, y = measure_col)
@@ -649,7 +702,7 @@ analyse_barplot <- function(
         cld = cld_table_nonparametric
       ))
     } else {
-      # NO SIGNIFICANT DIFFERENCES
+      # NO SIGNIFICANT DIFFERENCES CASE
       # STRATEGY: Return informative message instead of plot
       # PURPOSE: Avoid misleading post-hoc testing when overall test is non-significant
       return("Data are not significantly different, the Dunn test was not performed.")
@@ -678,6 +731,8 @@ analyse_curve <- function(df, col_vector,
   # ===========================================
   # NOTE: All required packages loaded via global.R
   # ===========================================
+  # STRATEGY: Centralized package management
+  # PURPOSE: Avoid redundant library calls and version conflicts
 
   # ===========================================
   # AXIS LABEL PREPARATION SECTION
@@ -822,10 +877,14 @@ analyse_curve <- function(df, col_vector,
                                     time_col,
                                     parameter_col,
                                     control_group) {
-  # First get all unique facets
+  # STEP 1: GET ALL UNIQUE FACETS
+  # STRATEGY: Process each experimental condition separately
+  # PURPOSE: Separate statistical testing for each facet level
   facets <- unique(df[[facet_col]])
 
-  # Create empty results dataframe with proper structure
+  # STEP 2: INITIALIZE RESULTS DATAFRAME
+  # STRATEGY: Pre-define result structure for consistent output
+  # PURPOSE: Ensure consistent column names and types
   results <- data.frame(
     facet = character(),
     group = character(),
@@ -833,20 +892,28 @@ analyse_curve <- function(df, col_vector,
     stringsAsFactors = FALSE
   )
 
-  # Loop through facets
+  # STEP 3: LOOP THROUGH FACETS
+  # STRATEGY: Separate analysis for each experimental condition
+  # PURPOSE: Independent statistical testing within each condition
   for (current_facet in facets) {
     facet_data <- df[df[[facet_col]] == current_facet,]
     groups_to_compare <- setdiff(levels(factor(facet_data[[grouping_col]])),
                                               control_group)
 
-    # Process each group
+    # STEP 4: PROCESS EACH GROUP VS CONTROL
+    # STRATEGY: Pairwise comparisons against control group
+    # PURPOSE: Identify which groups differ significantly from control
     for (group in groups_to_compare) {
-      # Create subset with just control and test group
+      # CREATE SUBSET WITH JUST CONTROL AND TEST GROUP
+      # STRATEGY: Two-group comparison for focused testing
+      # PURPOSE: Simplify model and improve statistical power
       df_sub <- facet_data[facet_data[[grouping_col]] %in%
                           c(control_group, group),]
       df_sub[[grouping_col]] <- droplevels(factor(df_sub[[grouping_col]]))
 
-      # Create a row for this test result
+      # CREATE RESULT ROW FOR THIS TEST
+      # STRATEGY: Pre-allocate result structure with NA p-value
+      # PURPOSE: Consistent output even when tests fail
       result_row <- data.frame(
         facet = current_facet,
         group = group,
@@ -856,22 +923,31 @@ analyse_curve <- function(df, col_vector,
 
       tryCatch({
         # COMPARATIVE qGAM MODEL
+        # STRATEGY: Single model with group-specific smooths
+        # PURPOSE: Test whether smooth curves differ between groups
         m1 <- qgam::qgam(
           as.formula(paste(parameter_col, "~ s(", time_col, ", by = ", grouping_col, ", k=5) +", grouping_col)),
           data = df_sub,
           qu = 0.5  # Median regression
         )
 
-        # EXTRACT P-VALUE
+        # EXTRACT P-VALUE FROM MODEL SUMMARY
+        # STRATEGY: Extract smooth term p-value for group difference
+        # PURPOSE: Statistical test of whether curves differ significantly
         s <- summary(m1)
         if (length(s$s.pv) >= 2) {
           result_row$p.value <- s$s.pv[2]  # Second smooth term p-value
         }
 
-        # Add this result to our results dataframe
+        # ADD SUCCESSFUL RESULT TO DATAFRAME
+        # STRATEGY: Accumulate successful test results
+        # PURPOSE: Build complete results dataframe
         results <- rbind(results, result_row)
 
       }, error = function(e) {
+        # ERROR HANDLING FOR INDIVIDUAL TESTS
+        # STRATEGY: Warning instead of stopping entire analysis
+        # PURPOSE: Partial results are better than no results
         warning(paste("Statistical test failed for", group, "in", current_facet, ":", e$message))
       })
     }
@@ -986,9 +1062,10 @@ analyse_curve <- function(df, col_vector,
       theme(
         legend.title = element_blank(),  # Remove legend title for cleaner look
         axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+        text = element_text(size = 18),
         strip.background = element_blank(),
         strip.placement = "outside",
-        strip.text = element_text(face = "plain", size = 10, color = "black", hjust = 0.5)
+        strip.text = element_text(face = "plain", size = 20, color = "black", hjust = 0.5)
       ) +
 
       # AXIS LABELS
@@ -1030,7 +1107,7 @@ analyse_curve <- function(df, col_vector,
         p <- p + geom_text(
           data = annotation_df,
           aes(x = x, y = y, label = label),
-          size = 3, fontface = "bold",
+          size = 6, fontface = "bold",
           inherit.aes = FALSE
         )
       }

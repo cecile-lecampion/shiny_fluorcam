@@ -10,33 +10,45 @@
 source("global.R",  local = TRUE) # Load the global variables and packages
 
 ui <- dashboardPage(
-  # HEADER: Simple title bar for the application
+  # ===========================================
+  # HEADER SECTION
+  # ===========================================
+  # STRATEGY: Professional branding with logo and title
+  # PURPOSE: Clear application identity and professional appearance
   dashboardHeader(
     title = div(
       class = "brand",
       tags$img(src = "fluorcam_toolbox_logo.png", alt = "FluorCam", class = "brand-logo"),
       span("FluorCam Toolbox", class = "brand-title")
     ),
-    titleWidth = 360
+    titleWidth = 360  # Fixed width to accommodate logo and title
   ),
   
-  # SIDEBAR: Empty because we use sidebarLayout inside dashboardBody
-  # STRATEGY: This allows more flexibility in layout while keeping dashboard styling
-  dashboardSidebar(disable = TRUE
-    # Empty sidebar since you're using sidebarLayout inside dashboardBody
-  ),
+  # ===========================================
+  # SIDEBAR CONFIGURATION
+  # ===========================================
+  # STRATEGY: Disabled sidebar to use custom layout
+  # PURPOSE: More flexibility while keeping dashboard styling
+  dashboardSidebar(disable = TRUE),
 
+  # ===========================================
   # MAIN DASHBOARD BODY
+  # ===========================================
+  # STRATEGY: Custom CSS + fluidPage for responsive design
+  # PURPOSE: Professional styling with responsive layouts
   dashboardBody(
+    # ===========================================
     # CSS STYLING SECTION
-    # STRATEGY: Custom CSS to improve visual appearance and user experience
-    # - Professional color scheme and spacing
-    # - Hover effects for better interactivity
-    # - Responsive design elements
-    # - Fixed plot container sizing issues
+    # ===========================================
+    # STRATEGY: Comprehensive custom CSS for professional appearance
+    # PURPOSE: Improve visual design, user experience, and fix layout issues
     tags$head(
       tags$style(HTML("
-        /* Header brand */
+        /* ===========================================
+           HEADER AND BRANDING STYLES
+           =========================================== */
+        /* STRATEGY: Responsive logo and title layout */
+        /* PURPOSE: Professional branding that works on all screen sizes */
         .main-header .logo {
           display: flex !important;
           align-items: center;
@@ -51,7 +63,7 @@ ui <- dashboardPage(
           text-overflow: ellipsis;
         }
         .brand-logo {
-          max-height: 32px;   /* s'intègre bien dans un header de 50px */
+          max-height: 32px;   /* Fits well in 50px header */
           width: auto;
           display: block;
         }
@@ -60,22 +72,28 @@ ui <- dashboardPage(
           font-size: 18px;
           line-height: 1;
           letter-spacing: 0.2px;
-          color: #fff; /* conserve le contraste du header AdminLTE */
+          color: #fff; /* Maintains AdminLTE header contrast */
         }
-        /* Ajustements mobiles */
+        
+        /* MOBILE RESPONSIVE ADJUSTMENTS */
+        /* STRATEGY: Smaller elements on mobile devices */
+        /* PURPOSE: Maintain readability on small screens */
         @media (max-width: 480px) {
           .brand-logo { max-height: 24px; }
           .brand-title { font-size: 16px; }
         }
         
-        /* Dashboard background improvements */
+        /* ===========================================
+           GENERAL LAYOUT IMPROVEMENTS
+           =========================================== */
         /* STRATEGY: Light background for better readability */
+        /* PURPOSE: Reduce eye strain and improve content visibility */
         .content-wrapper, .right-side {
           background-color: #f8f9fa;
         }
         
-        /* Improve info boxes in Analysis Results */
-        /* STRATEGY: Card-like design for better information hierarchy */
+        /* STRATEGY: Card-like design for information hierarchy */
+        /* PURPOSE: Clear visual separation of content blocks */
         .info-box {
           background: white;
           padding: 20px;
@@ -85,15 +103,18 @@ ui <- dashboardPage(
           border-left: 4px solid #3c8dbc;
         }
         
-        /* Button improvements */
-        /* STRATEGY: Consistent button spacing and rounded corners */
+        /* ===========================================
+           INTERACTIVE ELEMENT STYLING
+           =========================================== */
+        /* STRATEGY: Consistent button spacing and modern design */
+        /* PURPOSE: Professional appearance and improved usability */
         .btn-block {
           margin-bottom: 15px;
           border-radius: 5px;
         }
         
-        /* Panel heading improvements */
-        /* STRATEGY: Interactive hover effects to indicate clickable accordion panels */
+        /* STRATEGY: Interactive hover effects for accordion panels */
+        /* PURPOSE: Visual feedback that panels are clickable */
         .panel-heading {
           cursor: pointer !important;
           transition: background-color 0.3s ease !important;
@@ -121,16 +142,16 @@ ui <- dashboardPage(
           width: 100% !important;
         }
         
-        /* Alert boxes improvements */
         /* STRATEGY: Modern alert design without harsh borders */
+        /* PURPOSE: Softer, more professional notification appearance */
         .alert {
           border-radius: 6px;
           border: none;
           box-shadow: 0 1px 4px rgba(0,0,0,0.1);
         }
         
-        /* Tab improvements */
-        /* STRATEGY: Branded tab design matching overall color scheme */
+        /* STRATEGY: Branded tab design matching color scheme */
+        /* PURPOSE: Consistent visual identity throughout application */
         .nav-tabs {
           border-bottom: 2px solid #3c8dbc;
         }
@@ -140,8 +161,8 @@ ui <- dashboardPage(
           border-color: #3c8dbc !important;
         }
         
-        /* Table improvements */
         /* STRATEGY: Clean table design with subtle shadows */
+        /* PURPOSE: Professional data presentation */
         .table {
           background: white;
           border-radius: 5px;
@@ -149,28 +170,33 @@ ui <- dashboardPage(
           box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
         
-        /* FIXED: Plot container improvements */
+        /* ===========================================
+           PLOT CONTAINER FIXES
+           =========================================== */
         /* STRATEGY: Solve plot overflow issues and ensure responsive design */
-        /* PROBLEM SOLVED: Plots were extending beyond container boundaries */
+        /* PURPOSE: Prevent plots from extending beyond container boundaries */
+        /* PROBLEM SOLVED: Plots were overflowing their containers */
         #plot_result {
           background: white;
           padding: 20px;
           border-radius: 8px;
           box-shadow: 0 2px 8px rgba(0,0,0,0.1);
           margin: 15px 0;
-          overflow: hidden;  /* Prevents plot from extending beyond container */
+          overflow: hidden;  /* Prevents plot overflow */
           width: 100%;
           box-sizing: border-box;  /* Includes padding in width calculation */
         }
         
-        /* Ensure plot fits within container */
+        /* STRATEGY: Force plot to fit within container */
+        /* PURPOSE: Responsive plot sizing on all devices */
         #plot_result .shiny-plot-output {
           width: 100% !important;
           height: auto !important;
           max-width: 100%;
         }
         
-        /* Fix plot image sizing */
+        /* STRATEGY: Responsive image sizing */
+        /* PURPOSE: Ensure plot images scale properly */
         #plot_result img {
           max-width: 100%;
           height: auto;
@@ -178,8 +204,11 @@ ui <- dashboardPage(
           margin: 0 auto;
         }
         
-        /* Input field improvements */
+        /* ===========================================
+           FORM ELEMENT IMPROVEMENTS
+           =========================================== */
         /* STRATEGY: Modern input styling with focus effects */
+        /* PURPOSE: Better user interaction feedback */
         .form-control {
           border-radius: 4px;
           border: 1px solid #ddd;
@@ -190,9 +219,13 @@ ui <- dashboardPage(
           box-shadow: 0 0 0 0.2rem rgba(60, 141, 188, 0.25);
         }
         
-        /* HELP TAB SCROLLABLE CONTAINER */
+        /* ===========================================
+           HELP TAB SCROLLABLE CONTAINER
+           =========================================== */
+        /* STRATEGY: Fixed height container with custom scrollbar */
+        /* PURPOSE: Better navigation of long documentation content */
         .help-container {
-          height: 80vh; /* 80% de la hauteur de l'écran */
+          height: 80vh; /* 80% of screen height */
           overflow-y: auto;
           overflow-x: hidden;
           padding: 20px;
@@ -202,7 +235,8 @@ ui <- dashboardPage(
           margin: 10px 0;
         }
         
-        /* Améliorer l'apparence de la scrollbar */
+        /* STRATEGY: Custom scrollbar styling for better aesthetics */
+        /* PURPOSE: Professional appearance even for scroll elements */
         .help-container::-webkit-scrollbar {
           width: 8px;
         }
@@ -221,7 +255,11 @@ ui <- dashboardPage(
           background: #a8a8a8;
         }
         
-        /* Styles pour le contenu markdown dans le conteneur */
+        /* ===========================================
+           HELP CONTENT MARKDOWN STYLING
+           =========================================== */
+        /* STRATEGY: Professional documentation styling */
+        /* PURPOSE: Improved readability and visual hierarchy */
         .help-container h1, .help-container h2, .help-container h3 {
           color: #3c8dbc;
           border-bottom: 2px solid #e9ecef;
@@ -230,17 +268,9 @@ ui <- dashboardPage(
           margin-bottom: 15px;
         }
         
-        .help-container h1 {
-          font-size: 28px;
-        }
-        
-        .help-container h2 {
-          font-size: 24px;
-        }
-        
-        .help-container h3 {
-          font-size: 20px;
-        }
+        .help-container h1 { font-size: 28px; }
+        .help-container h2 { font-size: 24px; }
+        .help-container h3 { font-size: 20px; }
         
         .help-container p {
           line-height: 1.6;
@@ -248,6 +278,8 @@ ui <- dashboardPage(
           text-align: justify;
         }
         
+        /* STRATEGY: Distinctive code styling */
+        /* PURPOSE: Clear differentiation between code and text */
         .help-container code {
           background-color: #f8f9fa;
           border: 1px solid #e9ecef;
@@ -265,6 +297,8 @@ ui <- dashboardPage(
           overflow-x: auto;
         }
         
+        /* STRATEGY: Improved list styling */
+        /* PURPOSE: Better visual hierarchy and spacing */
         .help-container ul, .help-container ol {
           margin-left: 20px;
           margin-bottom: 15px;
@@ -277,60 +311,66 @@ ui <- dashboardPage(
       "))
     ),
     
+    # ===========================================
     # MAIN LAYOUT STRUCTURE
-    # STRATEGY: Use fluidPage with sidebarLayout for responsive design
-    # - Sidebar for controls and parameters
-    # - Main panel for results and data display
+    # ===========================================
+    # STRATEGY: Responsive design using fluidPage with sidebarLayout
+    # PURPOSE: Optimal layout for desktop and mobile devices
     fluidPage(
       sidebarLayout(
 
         # ===========================================
-        # SIDEBAR PANEL: ALL USER CONTROLS
+        # SIDEBAR PANEL: WORKFLOW CONTROLS
         # ===========================================
-        # STRATEGY: Organized as step-by-step workflow using accordion panels
-        # - Guides users through logical analysis sequence
-        # - Collapsible panels reduce visual clutter
-        # - Each section builds on the previous one
+        # STRATEGY: Step-by-step guided workflow using accordion panels
+        # PURPOSE: Organized, progressive user interface that guides analysis
         sidebarPanel(
 
+          # ===========================================
           # ACCORDION CONTAINER
-          # STRATEGY: Bootstrap accordion for organized workflow
-          # BENEFIT: Users can focus on one step at a time
+          # ===========================================
+          # STRATEGY: Bootstrap accordion for collapsible sections
+          # PURPOSE: Reduce visual clutter and guide users through workflow
           div(class = "panel-group", id = "accordion",
             
             # ===========================================
-            # SECTION 1: FILE NAME CONFIGURATION
+            # SECTION 1: FILE NAMING CONFIGURATION
             # ===========================================
-            # PURPOSE: Define the naming pattern for data files
-            # STRATEGY: Set up variable mapping before loading data
-            # WHY FIRST: File naming pattern must be understood before data loading
+            # TITLE: File Name Configuration
+            # STRATEGY: Define variable mapping before any data operations
+            # PURPOSE: Establish file naming convention understanding
             div(class = "panel panel-primary",
+                # ACCORDION HEADER
+                # STRATEGY: Clickable header with clear section numbering
+                # PURPOSE: Visual hierarchy and intuitive navigation
                 div(class = "panel-heading",
                     h4(class = "panel-title",
                        tags$a(`data-toggle` = "collapse",
-                              `data-parent` = "#accordion",  # Accordion behavior
+                              `data-parent` = "#accordion",
                               href = "#collapse1",
                               icon("tag"), " 1. File Name Configuration"))
                 ),
-                # START EXPANDED: This is the first step users need to complete
+                # PANEL CONTENT - STARTS EXPANDED
+                # STRATEGY: First step should be immediately visible
+                # PURPOSE: Guide users to complete setup before proceeding
                 div(id = "collapse1", class = "panel-collapse collapse in",
                     div(class = "panel-body",
 
-                        # CLEAR INSTRUCTIONS
-                        # STRATEGY: Prominent alert box explains required format
-                        # BENEFIT: Reduces user confusion about file naming
+                        # NAMING CONVENTION EXPLANATION
+                        # STRATEGY: Prominent alert box with clear examples
+                        # PURPOSE: Prevent user confusion about required file format
                         div(class = "alert alert-info", style = "margin-bottom: 15px;",
                             icon("info-circle"),
                             strong(" Required File Naming Pattern:"),
-                            br(), br(),  # Extra spacing for readability
+                            br(), br(),
                             tags$code("VAR1_VAR2_VAR3.TXT", style = "font-size: 14px; background-color: #f8f9fa; padding: 15px;"),
                             br(), br(),
                             em("Example: Day1_LineA_Plant001.TXT")
                         ),
 
-                        # VARIABLE MAPPING INPUTS
-                        # STRATEGY: Three-column layout for clear variable definition
-                        # PURPOSE: Map generic VAR1/VAR2/VAR3 to actual experiment variables
+                        # VARIABLE DEFINITION INPUTS
+                        # STRATEGY: Three-column layout for logical organization
+                        # PURPOSE: Map generic placeholders to actual experiment variables
                         helpText("Define what each variable represents in your file names:"),
                         fluidRow(
                           column(4, 
@@ -353,9 +393,9 @@ ui <- dashboardPage(
                           )
                         ),
 
-                        # FILENAME PREVIEW
-                        # STRATEGY: Real-time preview helps users verify their setup
-                        # BENEFIT: Immediate feedback prevents file loading errors
+                        # LIVE FILENAME PREVIEW
+                        # STRATEGY: Real-time feedback using reactive inputs
+                        # PURPOSE: Immediate validation of user setup
                         div(class = "well well-sm", style = "margin-top: 15px; background-color: #f0f8ff;",
                             strong("Expected filename example: "),
                             tags$span(id = "filename_preview", style = "font-family: monospace; color: #2c3e50;",
@@ -368,10 +408,11 @@ ui <- dashboardPage(
             # ===========================================
             # SECTION 2: DATA LOADING
             # ===========================================
-            # PURPOSE: Load and preview data files
-            # STRATEGY: Directory selection → file pattern → preview → load
-            # WHY SECOND: Can only load data after understanding file naming
+            # TITLE: Data Loading Interface
+            # STRATEGY: File upload → pattern matching → preview → load
+            # PURPOSE: Secure, server-friendly data loading workflow
             div(class = "panel panel-primary",
+                # ACCORDION HEADER
                 div(class = "panel-heading",
                     h4(class = "panel-title",
                        tags$a(`data-toggle` = "collapse", 
@@ -379,21 +420,23 @@ ui <- dashboardPage(
                               href = "#collapse2",
                               icon("database"), " 2. Load Data"))
                 ),
-                # COLLAPSED BY DEFAULT: Users complete Section 1 first
+                # PANEL CONTENT - COLLAPSED BY DEFAULT
+                # STRATEGY: Users complete Section 1 before proceeding
+                # PURPOSE: Logical workflow progression
                 div(id = "collapse2", class = "panel-collapse collapse",
                     div(class = "panel-body",
 
-                        # FILE UPLOAD SECTION
-                        # STRATEGY: Direct file upload for server deployment
-                        # PURPOSE: Allow users to upload their own FluorCam files
+                        # FILE UPLOAD INTERFACE
+                        # STRATEGY: Direct file upload for server deployment compatibility
+                        # PURPOSE: Works in both local and deployed environments
                         div(
                           style = "background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;",
                           h4(icon("upload"), "Upload FluorCam Files",
                              style = "color: #495057; margin-bottom: 15px;"),
 
-                          # FILE UPLOAD INPUT
-                          # STRATEGY: Multiple file selection with .txt filter
-                          # PURPOSE: Upload all data files at once
+                          # MULTIPLE FILE INPUT
+                          # STRATEGY: Accept multiple files with extension filtering
+                          # PURPOSE: Bulk upload of related data files
                           fileInput(
                             "uploaded_files",
                             label = div(
@@ -407,33 +450,28 @@ ui <- dashboardPage(
                             width = "100%"
                           ),
 
-                          # UPLOAD STATUS
-                          verbatimTextOutput("upload_status"),
-
-                          # FILE PREVIEW
-                          conditionalPanel(
-                            condition = "output.files_uploaded",
-                            div(
-                              h5("Uploaded Files:", style = "margin-top: 15px;"),
-                              tableOutput("uploaded_files_table")
-                            )
-                          )
+                          # UPLOAD FEEDBACK
+                          # STRATEGY: Real-time status updates
+                          # PURPOSE: User feedback during file processing
+                          verbatimTextOutput("upload_status")
                         ),
 
-                        # FILE PATTERN INPUT
-                        # PURPOSE: Allow different file extensions (.TXT, .csv, etc.)
+                        # FILE PATTERN FILTER
+                        # STRATEGY: Flexible pattern matching for different file types
+                        # PURPOSE: Support various file extensions and naming patterns
                         textInput("pattern", "File Pattern", 
                                   value = ".TXT",
                                   placeholder = "e.g., .TXT, .csv"),
 
-                        # FILE PREVIEW TOGGLE
-                        # STRATEGY: Optional file list preview before loading
-                        # BENEFIT: Users can verify correct files will be loaded
-                        uiOutput("show_all_button"),  # Bouton conditionnel au lieu de actionButton fixe
+                        # FILE PREVIEW CONTROLS
+                        # STRATEGY: Optional file list with conditional toggle
+                        # PURPOSE: Verify correct files before loading
+                        uiOutput("show_all_button"),
                         br(), br(),
 
-                        # MAIN LOAD ACTION
-                        # STRATEGY: Prominent success-colored button for final action
+                        # MAIN LOAD ACTION BUTTON
+                        # STRATEGY: Prominent action button with success styling
+                        # PURPOSE: Clear call-to-action for data loading
                         actionButton("load", "Load Data",
                                      icon = icon("play"),
                                      class = "btn-success btn-block")
@@ -442,12 +480,13 @@ ui <- dashboardPage(
             ),
             
             # ===========================================
-            # SECTION 3: ANALYSIS PARAMETERS
+            # SECTION 3: ANALYSIS CONFIGURATION
             # ===========================================
-            # PURPOSE: Configure all analysis settings
-            # STRATEGY: Comprehensive parameter setup in logical order
-            # WHY THIRD: Requires loaded data to populate options
+            # TITLE: Analysis Parameters Setup
+            # STRATEGY: Comprehensive parameter configuration interface
+            # PURPOSE: All analysis settings in logical, organized layout
             div(class = "panel panel-primary",
+                # ACCORDION HEADER
                 div(class = "panel-heading",
                     h4(class = "panel-title",
                        tags$a(`data-toggle` = "collapse", 
@@ -455,31 +494,32 @@ ui <- dashboardPage(
                               href = "#collapse3",
                               icon("chart-line"), " 3. Analysis Parameters"))
                 ),
+                # PANEL CONTENT - REQUIRES DATA TO BE LOADED
                 div(id = "collapse3", class = "panel-collapse collapse",
                     div(class = "panel-body",
 
                         # ANALYSIS TYPE SELECTION
-                        # STRATEGY: Radio buttons for mutually exclusive choices
-                        # PURPOSE: Determines entire analysis workflow
+                        # STRATEGY: Radio buttons for mutually exclusive analysis types
+                        # PURPOSE: Determine entire downstream workflow
                         radioButtons("graph_type", 
                                      "Graph Type",
                                      choices = list(
-                                       "Bar Plot" = "Bar plot",      # For group comparisons
-                                       "Line Chart" = "Curve"        # For time course/trends
+                                       "Bar Plot" = "Bar plot",      # Static group comparisons
+                                       "Line Chart" = "Curve"        # Time course analysis
                                      ),
                                      selected = "Bar plot",
                                      inline = TRUE),
                         
-                        # DYNAMIC UI OUTPUTS
-                        # STRATEGY: Server-generated UI based on loaded data
-                        # BENEFIT: Options automatically populate from actual data
-                        uiOutput("rootSelect"),      # Variable selection
-                        uiOutput("columnSelect"),    # Parameter column selection
-                        uiOutput("editParamsBtn"),   # Time parameters (Line Chart only)
+                        # DYNAMIC UI SECTIONS
+                        # STRATEGY: Server-generated UI based on loaded data structure
+                        # PURPOSE: Automatically populate options from actual data
+                        uiOutput("rootSelect"),      # Parameter root selection (curves only)
+                        uiOutput("columnSelect"),    # Column/parameter selection
+                        uiOutput("editParamsBtn"),   # Time parameter configuration (curves only)
                         
-                        # FACET VARIABLE SELECTION
-                        # PURPOSE: How to split data into multiple panels
-                        # STRATEGY: Clear labeling with explanation
+                        # FACETING CONFIGURATION
+                        # STRATEGY: Clear labeling with explanatory text
+                        # PURPOSE: Control how data is split into multiple plot panels
                         div(
                           tags$label(
                             strong("Facet Variable"), 
@@ -490,17 +530,16 @@ ui <- dashboardPage(
                                       choices = c("var1", "var2"))
                         ),
                         
-                        # GROUP ORDERING CONTROLS
-                        # STRATEGY: Drag-and-drop interface for intuitive reordering
-                        # PURPOSE: Control order of groups in plots and legends
+                        # GROUP ORDERING INTERFACE
+                        # STRATEGY: Drag-and-drop sortable lists
+                        # PURPOSE: Intuitive control over group order in plots
                         helpText("Drag to reorder:"),
-                        uiOutput("var2_order_ui"), 
-                        uiOutput("var1_order_ui"),
+                        uiOutput("var2_order_ui"),  # X-axis variable order
+                        uiOutput("var1_order_ui"),  # Facet variable order
                         
-                        # CONTROL GROUP SELECTION
-                        # STRATEGY: Conditional display - only for Line Chart analysis
-                        # PURPOSE: Statistical comparisons need a reference group
-                        # WHY CONDITIONAL: Bar plots don't use control groups
+                        # CONTROL GROUP SELECTION (CONDITIONAL)
+                        # STRATEGY: Only display for curve analysis
+                        # PURPOSE: Statistical comparisons require reference group
                         conditionalPanel(
                           condition = "input.graph_type == 'Curve'",
                           div(
@@ -514,9 +553,9 @@ ui <- dashboardPage(
                         ),
                         hr(),
 
-                        # COLOR CUSTOMIZATION
+                        # COLOR CUSTOMIZATION INTERFACE
                         # STRATEGY: Dynamic color inputs based on number of groups
-                        # PURPOSE: Allow custom color schemes for better visualization
+                        # PURPOSE: Custom color schemes for better visualization
                         div(
                           tags$label(
                             strong("Select colors:"),
@@ -526,9 +565,9 @@ ui <- dashboardPage(
                         uiOutput("dynamic_color_inputs"),
                         hr(),
 
-                        # ANALYSIS EXECUTION
+                        # ANALYSIS EXECUTION BUTTON
                         # STRATEGY: Warning-colored button indicates significant action
-                        # PURPOSE: Execute the configured analysis
+                        # PURPOSE: Execute configured analysis with all parameters
                         actionButton("start_analysis", "Start Analysis",
                                      icon = icon("play"),
                                      class = "btn-warning btn-block")
@@ -537,12 +576,13 @@ ui <- dashboardPage(
             ),
             
             # ===========================================
-            # SECTION 4: EXPORT RESULTS
+            # SECTION 4: RESULTS EXPORT
             # ===========================================
-            # PURPOSE: Save analysis results and plots
-            # STRATEGY: Separate exports for data and plots with full customization
-            # WHY LAST: Only available after analysis is complete
+            # TITLE: Export Analysis Results
+            # STRATEGY: Separate exports for statistical data and plots
+            # PURPOSE: Professional output options with full customization
             div(class = "panel panel-primary",
+                # ACCORDION HEADER
                 div(class = "panel-heading",
                     h4(class = "panel-title",
                        tags$a(`data-toggle` = "collapse",
@@ -550,12 +590,13 @@ ui <- dashboardPage(
                               href = "#collapse4",
                               icon("download"), " 4. Export Results"))
                 ),
+                # PANEL CONTENT - ONLY AVAILABLE AFTER ANALYSIS
                 div(id = "collapse4", class = "panel-collapse collapse",
                     div(class = "panel-body",
 
-                        # STATISTICAL DATA EXPORT
-                        # STRATEGY: .zip format with multiple .txt files
-                        # BENEFIT: Organized, readable, and universally compatible
+                        # STATISTICAL DATA EXPORT SECTION
+                        # STRATEGY: ZIP archive with multiple text files
+                        # PURPOSE: Organized, readable statistical output
                         strong("Statistical Results:"),
                         br(), br(),
                         textInput("stats_filename", "Filename (without extension)",
@@ -568,12 +609,14 @@ ui <- dashboardPage(
                         hr(),
                         
                         # PLOT EXPORT SECTION
-                        # STRATEGY: Comprehensive customization options
-                        # PURPOSE: Professional-quality plot output
+                        # STRATEGY: Comprehensive customization for publication quality
+                        # PURPOSE: Professional plot output with format options
                         strong("Export Plot:"),
                         br(), br(),
 
-                        # FILENAME AND FORMAT
+                        # FILENAME AND FORMAT SELECTION
+                        # STRATEGY: Side-by-side layout for related options
+                        # PURPOSE: Efficient use of space for related settings
                         fluidRow(
                           column(6,
                             textInput("plot_filename", "Filename",
@@ -581,21 +624,21 @@ ui <- dashboardPage(
                                       placeholder = "Enter filename")
                           ),
                           column(6,
-                            # MULTIPLE FORMAT OPTIONS
-                            # STRATEGY: Different formats for different use cases
+                            # FORMAT OPTIONS FOR DIFFERENT USE CASES
+                            # STRATEGY: Multiple formats for different applications
                             selectInput("plot_format", "Format",
                                         choices = list(
-                                          "PNG (High-res)" = "png",    # General use
-                                          "PDF (Print)" = "pdf",       # Publications
+                                          "PNG (High-res)" = "png",    # General use, high quality
+                                          "PDF (Print)" = "pdf",       # Publication ready
                                           "SVG (Vector)" = "svg",      # Scalable graphics
-                                          "JPEG" = "jpg"               # Compressed
+                                          "JPEG" = "jpg"               # Compressed format
                                         ),
                                         selected = "png")
                           )
                         ),
 
-                        # DIMENSIONS AND UNITS
-                        # STRATEGY: Scientific units (cm) by default, with alternatives
+                        # PLOT DIMENSIONS CONFIGURATION
+                        # STRATEGY: Scientific units (cm) with alternatives
                         # PURPOSE: Professional control over plot sizing
                         fluidRow(
                           column(4,
@@ -607,124 +650,165 @@ ui <- dashboardPage(
                                          value = 20, min = 5, max = 40, step = 1)
                           ),
                           column(4,
-                            # SCIENTIFIC UNITS BY DEFAULT
+                            # UNIT SELECTION FOR DIFFERENT STANDARDS
+                            # STRATEGY: Scientific (cm) default with alternatives
                             selectInput("plot_units", "Units",
                                         choices = list(
                                           "Centimeters" = "cm",    # Scientific standard
-                                          "Inches" = "in",         # US standard
-                                          "Millimeters" = "mm"     # Precision work
+                                          "Inches" = "in",         # US publishing standard
+                                          "Millimeters" = "mm"     # High precision
                                         ),
                                         selected = "cm")
                           )
                         ),
                         br(),
 
-                        # EXPORT ACTION
+                        # PLOT EXPORT ACTION BUTTON
+                        # STRATEGY: Success-colored button for positive action
+                        # PURPOSE: Download configured plot with custom settings
                         downloadButton("download_plot", "Download Plot",
                                        class = "btn-success", icon = icon("image"))
                     )
                 )
             )
           )
-       ),
+        ),
           
+        # ===========================================
+        # MAIN PANEL: RESULTS DISPLAY AREA
+        # ===========================================
+        # STRATEGY: Tabbed interface for organized information presentation
+        # PURPOSE: Logical separation of data, results, and documentation
+        mainPanel(
+
           # ===========================================
-          # MAIN PANEL: RESULTS AND DATA DISPLAY
+          # TABBED INTERFACE CONTAINER
           # ===========================================
-          # STRATEGY: Tabbed interface for organized information display
-          # PURPOSE: Separate data overview, results, and help information
-          mainPanel(
+          # STRATEGY: Three-tab structure for complete workflow coverage
+          # PURPOSE: Separate concerns while maintaining easy navigation
+          tabsetPanel(
+            id = "main_tabs",
 
-            # TABBED INTERFACE
-            # STRATEGY: Logical separation of different information types
-            # BENEFIT: Reduces cognitive load and improves navigation
-            tabsetPanel(
-              id = "main_tabs",
+            # ===========================================
+            # TAB 1: DATA OVERVIEW
+            # ===========================================
+            # TITLE: Data Overview and File Management
+            # STRATEGY: Interactive data preview with file information
+            # PURPOSE: Allow users to verify loaded data before analysis
+            tabPanel("Data Overview", 
+                     icon = icon("table"),
+                     br(),
 
-              # ===========================================
-              # TAB 1: DATA OVERVIEW
-              # ===========================================
-              # PURPOSE: Preview loaded data and file information
-              # STRATEGY: Interactive table with toggle functionality
-              tabPanel("Data Overview", 
-                       icon = icon("table"),
-                       br(),
+                    # UPLOADED FILES INFORMATION SECTION
+                    # STRATEGY: Conditional display with toggle functionality
+                    # PURPOSE: Show file upload status without cluttering interface
+                    conditionalPanel(
+                       condition = "output.files_uploaded",
+                       div(
+                         h4("Uploaded Files:", style = "margin-bottom: 15px; color: #3c8dbc;"),
+                         # TOGGLE BUTTON FOR FILE LIST
+                         # STRATEGY: Collapsible file list to save space
+                         # PURPOSE: Optional detailed file information
+                         uiOutput("toggle_files_button"),
+                         br(),
+                         # CONDITIONAL FILE TABLE DISPLAY
+                         # STRATEGY: Show table only when requested
+                         # PURPOSE: Clean interface with optional detail
+                         uiOutput("uploaded_files_display"),
+                         hr()
+                       )
+                     ),
 
-                       # FILE INFORMATION
-                       # PURPOSE: Show which files were successfully loaded
-                       tableOutput("selected_files"),
-                       hr(),
+                    # PROCESSED FILES PREVIEW
+                    # STRATEGY: Always visible file information
+                    # PURPOSE: Show which files are ready for analysis
+                    tableOutput("selected_files"),
 
-                       # TABLE TOGGLE BUTTON
-                       # STRATEGY: User control over data display level
-                       # PURPOSE: Preview (5 rows) vs full table view
-                       uiOutput("toggle_button"),
-                       br(),
+                    # CONDITIONAL SEPARATOR
+                    # STRATEGY: Only show separator when files are present
+                    # PURPOSE: Clean layout without unnecessary elements
+                    conditionalPanel(
+                      condition = "output.selected_files",
+                      hr()
+                    ),
 
-                       # MAIN DATA TABLE
-                       # STRATEGY: DT datatable for interactive features
-                       # FEATURES: Horizontal scroll, filtering, pagination
-                       DT::dataTableOutput("processed_data")
-              ),
+                    # DATA TABLE TOGGLE CONTROLS
+                    # STRATEGY: User control over table detail level
+                    # PURPOSE: Balance between quick preview and full exploration
+                    uiOutput("toggle_button"),
+                    br(),
 
-              # ===========================================
-              # TAB 2: ANALYSIS RESULTS
-              # ===========================================
-              # PURPOSE: Display analysis outputs and visualizations
-              # STRATEGY: Information boxes + main plot display
-              tabPanel("Analysis Results",
-                       icon = icon("chart-line"),
-                       br(),
+                    # MAIN INTERACTIVE DATA TABLE
+                    # STRATEGY: DT datatable for full interactive features
+                    # PURPOSE: Comprehensive data exploration with filtering and pagination
+                    DT::dataTableOutput("processed_data")
+            ),
 
-                       # INFORMATION BOXES
-                       # STRATEGY: Key information displayed prominently
-                       fluidRow(
-                         # SELECTED VARIABLE INFO
-                         column(6,
-                           div(class = "info-box",
-                             h4("Selected Variable"),
-                             textOutput("selectedValue")
-                           )
-                         ),
+            # ===========================================
+            # TAB 2: ANALYSIS RESULTS
+            # ===========================================
+            # TITLE: Analysis Results and Visualizations
+            # STRATEGY: Information summary + main visualization display
+            # PURPOSE: Present analysis outputs in organized, readable format
+            tabPanel("Analysis Results",
+                     icon = icon("chart-line"),
+                     br(),
 
-                         # NORMALITY TEST RESULTS
-                         # STRATEGY: Conditional display - only for Bar plots
-                         # WHY: Line charts don't use normality testing
-                         conditionalPanel(
-                           condition = "input.graph_type == 'Bar plot'",
-                           column(6,
-                             div(class = "info-box",
-                               h4("Normality Test"),
-                               verbatimTextOutput("normality_text")
-                             )
-                           )
+                     # ANALYSIS INFORMATION SUMMARY
+                     # STRATEGY: Key information in prominent info boxes
+                     # PURPOSE: Quick reference for analysis parameters and results
+                     fluidRow(
+                       # SELECTED PARAMETER INFORMATION
+                       # STRATEGY: Always visible parameter confirmation
+                       # PURPOSE: User confirmation of what was analyzed
+                       column(6,
+                         div(class = "info-box",
+                           h4("Selected Variable"),
+                           textOutput("selectedValue")
                          )
                        ),
-                       hr(),
 
-                       # MAIN PLOT DISPLAY
-                       # STRATEGY: Fixed height for consistent layout
-                       # CSS: Responsive sizing handled in stylesheet above
-                       plotOutput("plot_result", height = "600px")
-              ),
-              
-              # ===========================================
-              # TAB 3: HELP DOCUMENTATION
-              # ===========================================
-              # PURPOSE: Comprehensive user documentation
-              # STRATEGY: Scrollable container for better navigation
-              tabPanel("Help",
-                       icon = icon("question-circle"),
-                       br(),
-                       
-                       # CONTENEUR SCROLLABLE POUR LE HELP
-                       div(class = "help-container",
-                           includeMarkdown("help.md")
+                       # NORMALITY TEST RESULTS (BAR PLOTS ONLY)
+                       # STRATEGY: Conditional display based on analysis type
+                       # PURPOSE: Statistical information relevant to bar plot analysis only
+                       conditionalPanel(
+                         condition = "input.graph_type == 'Bar plot'",
+                         column(6,
+                           div(class = "info-box",
+                             h4("Normality Test"),
+                             verbatimTextOutput("normality_text")
+                           )
+                         )
                        )
-              )
+                     ),
+                     hr(),
+
+                     # MAIN VISUALIZATION DISPLAY
+                     # STRATEGY: Fixed height container for consistent layout
+                     # PURPOSE: Professional plot presentation with responsive sizing
+                     plotOutput("plot_result", height = "600px")
+            ),
+            
+            # ===========================================
+            # TAB 3: HELP DOCUMENTATION
+            # ===========================================
+            # TITLE: User Help and Documentation
+            # STRATEGY: Comprehensive documentation in scrollable container
+            # PURPOSE: Complete user guidance and reference material
+            tabPanel("Help",
+                     icon = icon("question-circle"),
+                     br(),
+                     
+                     # SCROLLABLE HELP CONTAINER
+                     # STRATEGY: Fixed height container with custom scrolling
+                     # PURPOSE: Better navigation of extensive documentation
+                     div(class = "help-container",
+                         includeMarkdown("help.md")  # External markdown file for easy editing
+                     )
             )
           )
         )
       )
     )
   )
+)

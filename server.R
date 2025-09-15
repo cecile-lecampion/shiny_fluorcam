@@ -20,13 +20,13 @@ server <- function(input, output, session) {
 
   # DIRECTORY BROWSING SETUP
   # STRATEGY: Cross-platform directory selection using shinyDirChoose
-  # BENEFIT: Works on Windows, Mac, and Linux
+  # PURPOSE: Works on Windows, Mac, and Linux
   volumes <- c(Home = fs::path_home(), "R" = R.home(), getVolumes()())
   shinyDirChoose(input, "dir", roots = volumes, session = session)
   
   # REACTIVE DIRECTORY PATH
-  # PURPOSE: Convert shinyDirChoose output to usable path string
-  # STRATEGY: Reactive expression for automatic updates when directory changes
+  # STRATEGY: Convert shinyDirChoose output to usable path string
+  # PURPOSE: Reactive expression for automatic updates when directory changes
   dirpath <- reactive({
     parseDirPath(volumes, input$dir)
   })
@@ -48,6 +48,8 @@ server <- function(input, output, session) {
   session_dir <- file.path(tempdir(), paste0("fluorcam_session_", session_id))
 
   # ENSURE SESSION DIRECTORY EXISTS
+  # STRATEGY: Create session directory if it doesn't exist
+  # PURPOSE: Ensure workspace is ready for file operations
   if (!dir.exists(session_dir)) {
     dir.create(session_dir, recursive = TRUE)
   }
@@ -82,7 +84,8 @@ server <- function(input, output, session) {
   }
 
   # SCHEDULE PERIODIC CLEANUP
-  # STRATEGY: Run cleanup every 30 minutes
+  # STRATEGY: Run cleanup every 30 minutes using reactive timer
+  # PURPOSE: Maintain server resources by removing old session files
   observeEvent(reactiveTimer(30 * 60 * 1000)(), {
     cleanup_old_sessions()
   })
@@ -94,6 +97,8 @@ server <- function(input, output, session) {
   # PURPOSE: Replace directory browsing with file upload
 
   # FILE UPLOAD PROCESSING
+  # STRATEGY: Process uploaded files with validation and session organization
+  # PURPOSE: Handle file uploads, validate naming convention, and organize in session directory
   observeEvent(input$uploaded_files, {
     req(input$uploaded_files)
 
@@ -123,6 +128,8 @@ server <- function(input, output, session) {
       }
 
       # VALIDATION FEEDBACK
+      # STRATEGY: Provide user feedback on file validation results
+      # PURPOSE: Inform user of successful uploads and naming issues
       if (length(invalid_files) > 0) {
         showNotification(
           paste("Invalid file names (must be VAR1_VAR2_VAR3.txt):",
@@ -144,6 +151,8 @@ server <- function(input, output, session) {
   })
 
   # UPLOAD STATUS DISPLAY
+  # STRATEGY: Show current upload status and file count
+  # PURPOSE: Provide real-time feedback on upload status
   output$upload_status <- renderText({
     if (is.null(input$uploaded_files)) {
       return("No files uploaded yet.")
@@ -158,12 +167,80 @@ server <- function(input, output, session) {
   })
 
   # FILES UPLOADED FLAG
+  # STRATEGY: Reactive flag to indicate if files are available
+  # PURPOSE: Enable conditional UI elements based on file availability
   output$files_uploaded <- reactive({
     !is.null(input$uploaded_files) && length(list.files(session_dir, pattern = "\\.(txt|TXT)$")) > 0
   })
   outputOptions(output, "files_uploaded", suspendWhenHidden = FALSE)
 
+  # REACTIVE VARIABLE FOR CONTROLLING UPLOADED FILES DISPLAY
+  # STRATEGY: Use reactiveVal for simple boolean state management
+  # PURPOSE: Control visibility of uploaded files list
+  show_uploaded_files <- reactiveVal(FALSE)
+
+  # TOGGLE BUTTON FOR UPLOADED FILES
+  # STRATEGY: Dynamic toggle button with file count display
+  # PURPOSE: Allow users to show/hide uploaded files list with context
+  output$toggle_files_button <- renderUI({
+    req(input$uploaded_files)
+    
+    file_count <- nrow(input$uploaded_files)
+    
+    if (show_uploaded_files()) {
+      actionButton("toggle_uploaded_files", "Hide file list", 
+                  icon = icon("chevron-up"),
+                  class = "btn-sm btn-outline-secondary",
+                  style = "margin-bottom: 10px;")
+    } else {
+      actionButton("toggle_uploaded_files", paste("Show uploaded files (", file_count, ")"), 
+                  icon = icon("chevron-down"),
+                  class = "btn-sm btn-outline-secondary", 
+                  style = "margin-bottom: 10px;")
+    }
+  })
+
+  # OBSERVER FOR TOGGLE BUTTON
+  # STRATEGY: Simple state toggle when button is clicked
+  # PURPOSE: Toggle visibility state of uploaded files display
+  observeEvent(input$toggle_uploaded_files, {
+    show_uploaded_files(!show_uploaded_files())
+  })
+
+  # CONDITIONAL DISPLAY OF UPLOADED FILES TABLE
+  # STRATEGY: Show table only when toggle is activated
+  # PURPOSE: Clean UI with optional detailed file information
+  output$uploaded_files_display <- renderUI({
+    req(input$uploaded_files, show_uploaded_files())
+    
+    tableOutput("uploaded_files_table_main")
+  })
+
+  # UPLOADED FILES TABLE FOR MAIN PANEL
+  # STRATEGY: Formatted table with file information and size formatting
+  # PURPOSE: Display uploaded file details in user-friendly format
+  output$uploaded_files_table_main <- renderTable({
+    req(input$uploaded_files)
+    
+    files_df <- input$uploaded_files
+    display_df <- files_df[, c("name", "size")]
+    
+    # FILE SIZE FORMATTING
+    # STRATEGY: Convert bytes to human-readable format
+    # PURPOSE: Display file sizes in appropriate units (B, KB, MB)
+    display_df$size <- sapply(display_df$size, function(x) {
+      if (x < 1024) paste(x, "B")
+      else if (x < 1024^2) paste(round(x/1024, 1), "KB")
+      else paste(round(x/1024^2, 1), "MB")
+    })
+    
+    colnames(display_df) <- c("File Name", "Size")
+    display_df
+  }, striped = TRUE, hover = TRUE, bordered = TRUE)
+
   # UPLOADED FILES TABLE
+  # STRATEGY: Display files currently in session directory
+  # PURPOSE: Show processed files ready for analysis
   output$uploaded_files_table <- renderTable({
     files_in_session <- list.files(session_dir, pattern = "\\.(txt|TXT)$")
     if (length(files_in_session) > 0) {
@@ -182,7 +259,7 @@ server <- function(input, output, session) {
     session_dir
   })
 
-  # REMOVE the directory display output (output$dirpath) as it's no longer needed
+  # NOTE: Removed directory display output (output$dirpath) as it's no longer needed
 
   # ===========================================
   # SECURITY AND RESOURCE MANAGEMENT
@@ -192,10 +269,12 @@ server <- function(input, output, session) {
 
   # FILE SIZE LIMITS
   # STRATEGY: Prevent abuse through large file uploads
-  # Maximum total upload size per session
+  # PURPOSE: Set reasonable limits to protect server resources
   MAX_SESSION_SIZE <- 100 * 1024 * 1024  # 100 MB
 
   # VALIDATE SESSION SIZE
+  # STRATEGY: Check total session size against limits
+  # PURPOSE: Prevent resource exhaustion from large uploads
   validate_session_size <- function() {
     if (dir.exists(session_dir)) {
       total_size <- sum(file.size(list.files(session_dir, full.names = TRUE)), na.rm = TRUE)
@@ -210,6 +289,7 @@ server <- function(input, output, session) {
 
   # FILE TYPE VALIDATION
   # STRATEGY: Only allow text files to prevent security issues
+  # PURPOSE: Validate file content matches expected FluorCam format
   validate_file_content <- function(filepath) {
     tryCatch({
       # READ FIRST FEW LINES TO CHECK FORMAT
@@ -336,7 +416,7 @@ server <- function(input, output, session) {
   
   # TABLE DISPLAY CONTROL
   # STRATEGY: Global state for table view mode (preview vs full)
-  # WHY OUTSIDE LOAD EVENT: Persists across data reloads
+  # PURPOSE: Persists across data reloads
   show_full_table <- reactiveValues(full = FALSE)
 
   # TABLE TOGGLE OBSERVER
@@ -352,6 +432,9 @@ server <- function(input, output, session) {
   # STRATEGY: Robust data loading with validation and error handling
   # PURPOSE: Load and validate data files, provide user feedback
 
+  # DATA LOADING EVENT HANDLER
+  # STRATEGY: Event-driven data processing with comprehensive validation
+  # PURPOSE: Process uploaded files and prepare data for analysis
   observeEvent(input$load, {
     # INPUT VALIDATION
     req(input$pattern, input$var1, input$var2, input$var3)
@@ -369,7 +452,8 @@ server <- function(input, output, session) {
     }
 
     # EXTRACT INPUT VALUES
-    # STRATEGY: Store inputs in local variables
+    # STRATEGY: Store inputs in local variables for processing
+    # PURPOSE: Clean code and consistent variable access
     pattern <- input$pattern
     var1 <- input$var1
     var2 <- input$var2
@@ -420,8 +504,10 @@ server <- function(input, output, session) {
   # ===========================================
   # STRATEGY: Interactive data table with responsive design
   # PURPOSE: Allow users to explore loaded data with horizontal scrolling and filtering
-  # WHY OUTSIDE LOAD EVENT: Reactive to show_full_table changes
 
+  # MAIN DATA TABLE RENDERER
+  # STRATEGY: Responsive table with different modes (preview vs full)
+  # PURPOSE: Provide appropriate data exploration interface based on user needs
   output$processed_data <- DT::renderDataTable({
     req(result_df$data)  # Only render when data is available
 
@@ -587,8 +673,10 @@ server <- function(input, output, session) {
   # ===========================================
   # STRATEGY: Modal dialog for complex parameter input
   # PURPOSE: Configure time values and units for curve analysis
-  # WHY MODAL: Keeps main UI clean while allowing detailed parameter setup
 
+  # EDIT PARAMETERS MODAL HANDLER
+  # STRATEGY: Dynamic modal creation based on selected parameters
+  # PURPOSE: Provide interface for time parameter configuration
   observeEvent(input$edit_params, {
     req(input$column)
     params <- input$column
@@ -607,6 +695,7 @@ server <- function(input, output, session) {
     
     # MODAL DIALOG CONSTRUCTION
     # STRATEGY: Professional styling with clear sections
+    # PURPOSE: Provide clean interface for parameter input
     showModal(modalDialog(
       title = div(
         style = "text-align: center; background: #00b8e9; color: white; padding: 15px; margin: -15px -15px 20px -15px; border-radius: 8px 8px 0 0;",
@@ -618,6 +707,7 @@ server <- function(input, output, session) {
       
       # INSTRUCTIONS SECTION
       # STRATEGY: Clear guidance for users
+      # PURPOSE: Explain what users need to input
       div(
         class = "alert alert-info",
         style = "background-color: #e8f4f8; border: 1px solid #bee5eb; border-radius: 5px; margin-bottom: 20px;",
@@ -629,6 +719,7 @@ server <- function(input, output, session) {
       
       # UNIT INPUT SECTION
       # STRATEGY: Common unit for all parameters
+      # PURPOSE: Standardize time measurement across all parameters
       div(
         style = "background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 20px;",
         textInput("unit_common", 
@@ -642,6 +733,7 @@ server <- function(input, output, session) {
       
       # PARAMETER VALUES SECTION
       # STRATEGY: Scrollable container for many parameters
+      # PURPOSE: Handle variable number of time points efficiently
       div(
         div(
           icon("chart-line", style = "margin-right: 5px; color: #28a745;"), 
@@ -657,6 +749,7 @@ server <- function(input, output, session) {
       
       # MODAL FOOTER WITH ACTION BUTTONS
       # STRATEGY: Clear cancel/confirm options
+      # PURPOSE: Provide standard modal interaction patterns
       footer = tagList(
         actionButton("cancel_modal", "Cancel", 
                      class = "btn-secondary",
@@ -671,6 +764,7 @@ server <- function(input, output, session) {
   
   # MODAL CANCELLATION HANDLER
   # STRATEGY: Handle cancel button clicks
+  # PURPOSE: Close modal without saving changes
   observeEvent(input$modal_dismiss, {
     removeModal()
   })
@@ -695,6 +789,7 @@ server <- function(input, output, session) {
 
   # SELECTED VALUE REACTIVE
   # STRATEGY: Standardized access to selected columns
+  # PURPOSE: Provide consistent interface for analysis functions
   VALUE <- reactive({
     req(input$column)
     input$column
@@ -717,7 +812,9 @@ server <- function(input, output, session) {
   # STRATEGY: Drag-and-drop interface for group ordering
   # PURPOSE: User control over plot appearance and legend order
 
-  # GROUPING VARIABLE ORDER
+  # GROUPING VARIABLE ORDER UI
+  # STRATEGY: Sortable list for x-axis variable ordering
+  # PURPOSE: Allow users to control order of groups in plots
   output$var2_order_ui <- renderUI({
     req(result_df$data)
     rank_list(
@@ -727,7 +824,9 @@ server <- function(input, output, session) {
     )
   })
   
-  # FACETING VARIABLE ORDER
+  # FACETING VARIABLE ORDER UI
+  # STRATEGY: Sortable list for faceting variable ordering
+  # PURPOSE: Allow users to control order of facets in plots
   output$var1_order_ui <- renderUI({
     req(result_df$data)
     rank_list(
@@ -743,6 +842,9 @@ server <- function(input, output, session) {
   # STRATEGY: Adaptive color selection based on analysis type
   # PURPOSE: Appropriate color controls for different plot types
 
+  # DYNAMIC COLOR INPUT GENERATOR
+  # STRATEGY: Generate different color controls based on plot type
+  # PURPOSE: Provide relevant color customization options
   output$dynamic_color_inputs <- renderUI({
     if (input$graph_type == "Bar plot") {
       # BAR PLOT: Three color components
@@ -780,9 +882,9 @@ server <- function(input, output, session) {
   # STRATEGY: Dynamic result display based on analysis type
   # PURPOSE: Show relevant statistical information to users
 
-
   # SELECTED VALUE DISPLAY
   # STRATEGY: Confirmation of user selection
+  # PURPOSE: Provide feedback on what parameter is being analyzed
   output$selectedValue <- renderText({
     req(input$start_analysis > 0)  # Only after analysis initiated
     req(result_df$data)
@@ -816,6 +918,7 @@ server <- function(input, output, session) {
   analysis_results <- eventReactive(input$start_analysis, {
     # INPUT VALIDATION
     # STRATEGY: Comprehensive requirement checking
+    # PURPOSE: Ensure all necessary inputs are available before analysis
     req(result_df$data)
     req(input$graph_type)
     req(input$facet_var)
@@ -827,6 +930,7 @@ server <- function(input, output, session) {
     if (input$graph_type == "Bar plot") {
       # BAR PLOT ANALYSIS
       # STRATEGY: Delegate to specialized analysis function
+      # PURPOSE: Keep server logic clean and modular
       barplot_results <- analyse_barplot(
         data = result_df$data,
         var1 = facet_var(),
@@ -841,7 +945,9 @@ server <- function(input, output, session) {
       # Extract the normality flag
       flag_normal <- barplot_results$normality
 
-      # Set up the normality text output
+      # NORMALITY TEST RESULT DISPLAY
+      # STRATEGY: Display normality test results to user
+      # PURPOSE: Inform statistical approach taken in analysis
       output$normality_text <- renderText({
         if (isTRUE(flag_normal)) {
           "Datas follow a normal law"
@@ -861,6 +967,7 @@ server <- function(input, output, session) {
     } else if (input$graph_type == "Curve") {
       # CURVE ANALYSIS
       # STRATEGY: Additional validation for curve-specific requirements
+      # PURPOSE: Ensure curve analysis has all required parameters
       req(input$var2)
       req(user_params$selected_params)
       req(input$column)
@@ -868,6 +975,7 @@ server <- function(input, output, session) {
 
       # COLOR VECTOR PREPARATION
       # STRATEGY: Extract user-selected colors for each group
+      # PURPOSE: Apply custom colors to curve analysis
       n_lines <- length(unique(result_df$data[[input$var2]]))
       curve_colors <- sapply(seq_len(n_lines), function(i) {
         color_input <- input[[paste0("curve_color_", i)]]
@@ -906,6 +1014,7 @@ server <- function(input, output, session) {
 
       # CURVE ANALYSIS EXECUTION
       # STRATEGY: Delegate to specialized qGAM analysis function
+      # PURPOSE: Perform time series analysis with statistical testing
       curve_results <- analyse_curve(
         df = long_data,
         col_vector = curve_colors,
@@ -934,6 +1043,7 @@ server <- function(input, output, session) {
 
   # RESULT AVAILABILITY CONFIRMATION
   # STRATEGY: Ensure export functionality knows when results are ready
+  # PURPOSE: Enable export buttons once analysis is complete
   observeEvent(analysis_results(), {
     req(analysis_results())
     # Results are automatically stored in current_plot and current_stats
@@ -957,7 +1067,9 @@ server <- function(input, output, session) {
       req(current_stats())  # Require completed analysis
 
       tryCatch({
-        # Create temporary directory for files
+        # CREATE TEMPORARY DIRECTORY FOR FILES
+        # STRATEGY: Organize multiple files before zipping
+        # PURPOSE: Clean export structure with multiple statistical outputs
         temp_dir <- tempdir()
         file_list <- c()
         stats_data <- current_stats()  # Get stored statistical results
@@ -1019,6 +1131,7 @@ server <- function(input, output, session) {
         } else if (input$graph_type == "Curve") {
           # CURVE ANALYSIS STATISTICAL EXPORTS
           # STRATEGY: Export qGAM predictions and statistical test results
+          # PURPOSE: Provide comprehensive curve analysis results
 
           if (!is.null(stats_data$qgam_predictions)) {
             qgam_file <- file.path(temp_dir, "qgam_model_predictions.txt")
@@ -1078,7 +1191,9 @@ server <- function(input, output, session) {
         }
 
       }, error = function(e) {
-        # Create error file to download instead
+        # ERROR HANDLING FOR EXPORT
+        # STRATEGY: Provide error file instead of failing silently
+        # PURPOSE: User feedback when export fails
         writeLines(paste("Error exporting statistical data:", e$message), file)
         showNotification(paste("Error exporting statistical data:", e$message), type = "error")
       })
@@ -1091,7 +1206,9 @@ server <- function(input, output, session) {
   # PURPOSE: Professional plot output downloadable to client machine
   output$download_plot <- downloadHandler(
     filename = function() {
-      # Ensure proper file extension
+      # ENSURE PROPER FILE EXTENSION
+      # STRATEGY: Clean filename handling with proper extensions
+      # PURPOSE: Prevent file extension issues on different systems
       base_filename <- tools::file_path_sans_ext(input$plot_filename)
       paste0(base_filename, ".", input$plot_format)
     },
