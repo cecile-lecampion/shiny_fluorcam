@@ -668,6 +668,50 @@ server <- function(input, output, session) {
     )
   })
 
+  # 6.5 DATA EXPORT UI COMPONENTS
+  # STRATEGY: Dynamic UI for data export based on loaded data
+  # PURPOSE: Allow users to select specific columns for export
+
+  # DATA LOADED FLAG FOR UI
+  # STRATEGY: Reactive flag to show/hide data export UI
+  # PURPOSE: Only show export options when data is available
+  output$data_loaded <- reactive({
+    !is.null(result_df$data)
+  })
+  outputOptions(output, "data_loaded", suspendWhenHidden = FALSE)
+
+  # COLUMN SELECTION UI FOR DATA EXPORT
+  # STRATEGY: Multi-select input with all available columns
+  # PURPOSE: Allow selective column export
+  output$column_selection_ui <- renderUI({
+    req(result_df$data)
+    
+    selectInput("export_columns", 
+                label = NULL,
+                choices = colnames(result_df$data),
+                selected = colnames(result_df$data), # All columns selected by default
+                multiple = TRUE,
+                size = min(10, length(colnames(result_df$data))), # Limit height
+                selectize = FALSE) # Use basic HTML select for better UX with many columns
+  })
+
+  # SELECT ALL COLUMNS BUTTON
+  # STRATEGY: Convenience function to select all columns
+  # PURPOSE: Quick selection for complete data export
+  observeEvent(input$select_all_cols, {
+    req(result_df$data)
+    updateSelectInput(session, "export_columns",
+                      selected = colnames(result_df$data))
+  })
+
+  # DESELECT ALL COLUMNS BUTTON
+  # STRATEGY: Convenience function to clear selection
+  # PURPOSE: Quick deselection for starting fresh
+  observeEvent(input$deselect_all_cols, {
+    updateSelectInput(session, "export_columns",
+                      selected = character(0))
+  })
+
   # ===========================================
   # SECTION 7: MODAL DIALOG FOR TIME PARAMETERS
   # ===========================================
@@ -1023,6 +1067,7 @@ server <- function(input, output, session) {
         grouping_col = x_var(),
         facet_col = facet_var(),
         control_group = input$control_group,
+        k = input$k_param,  # Utiliser la valeur k de l'utilisateur
         user_params = reactiveValuesToList(user_params)
       )
 
@@ -1159,16 +1204,73 @@ server <- function(input, output, session) {
         # STRATEGY: Include analysis settings for reproducibility
         # PURPOSE: Document how analysis was performed
         params_file <- file.path(temp_dir, "analysis_parameters.txt")
-        params_info <- data.frame(
-          Parameter = c("Analysis Type", "Parameter Column", "Grouping Variable", "Facet Variable",
-                       if(input$graph_type == "Curve") c("Control Group", "Time Unit") else NULL),
+        
+        # Calculate number of plants per group
+        x_var_name <- x_var()
+        facet_var_name <- facet_var()
+        
+        plants_per_group <- aggregate(
+          rep(1, nrow(result_df$data)), 
+          by = list(result_df$data[[x_var_name]], result_df$data[[facet_var_name]]), 
+          FUN = length
+        )
+        names(plants_per_group) <- c(x_var_name, facet_var_name, "n_plants")
+        
+        # Create base parameters
+        base_params <- data.frame(
+          Parameter = c("Analysis Type", "Parameter Column", "Grouping Variable", "Facet Variable"),
           Value = c(input$graph_type,
                    if(input$graph_type == "Bar plot") input$column else paste(input$column, collapse = ", "),
-                   input$var1, input$var2,
-                   if(input$graph_type == "Curve") c(input$control_group %||% "None",
-                                                    user_params$unit %||% "Not specified") else NULL),
+                   x_var(), facet_var()),
           stringsAsFactors = FALSE
         )
+        
+        # Add analysis-specific parameters
+        if (input$graph_type == "Bar plot") {
+          # Get normality status from stored results
+          normality_status <- if (!is.null(stats_data$normality)) {
+            if (stats_data$normality) "Normal" else "Non-normal"
+          } else "Unknown"
+          
+          # Determine statistical test used
+          statistical_test <- if (!is.null(stats_data$normality)) {
+            if (stats_data$normality) "Parametric (ANOVA + Tukey HSD)" else "Non-parametric (Kruskal-Wallis + Dunn)"
+          } else "Unknown"
+          
+          additional_params <- data.frame(
+            Parameter = c("Data Normality", "Statistical Test Used"),
+            Value = c(normality_status, statistical_test),
+            stringsAsFactors = FALSE
+          )
+          
+        } else if (input$graph_type == "Curve") {
+          additional_params <- data.frame(
+            Parameter = c("Control Group", "Time Unit", "qGAM Smoothing Parameter (k)"),
+            Value = c(input$control_group %||% "None",
+                     user_params$unit %||% "Not specified",
+                     as.character(input$k_param)),  # Utiliser input$k_param au lieu de k
+            stringsAsFactors = FALSE
+          )
+        }
+        
+        # Combine all parameters
+        params_info <- rbind(base_params, additional_params)
+        
+        # Add plants per group information
+        plants_summary <- paste(
+          paste(plants_per_group[[x_var()]], plants_per_group[[facet_var()]], 
+                plants_per_group$n_plants, sep = ": "), 
+          collapse = "; "
+        )
+        
+        plants_info <- data.frame(
+          Parameter = "Number of plants per group",
+          Value = plants_summary,
+          stringsAsFactors = FALSE
+        )
+        
+        params_info <- rbind(params_info, plants_info)
+        
         write.table(params_info, file = params_file,
                    sep = "\t", row.names = FALSE, quote = FALSE)
         file_list <- c(file_list, params_file)
@@ -1236,6 +1338,65 @@ server <- function(input, output, session) {
         showNotification(paste("Error exporting plot:", e$message), type = "error")
       })
     })
+
+  # 13.3 DATA TABLE EXPORT
+  # STRATEGY: Flexible data export with column selection and multiple formats
+  # PURPOSE: Enable users to download processed data in various formats
+  output$download_data <- downloadHandler(
+    filename = function() {
+      # ENSURE PROPER FILE EXTENSION
+      base_filename <- tools::file_path_sans_ext(input$data_filename)
+      extension <- switch(input$data_format,
+                       "csv" = ".csv",
+                       "xlsx" = ".xlsx", 
+                       "tsv" = ".tsv")
+      paste0(base_filename, extension)
+    },
+    content = function(file) {
+      req(result_df$data)
+      req(input$export_columns)
+      
+      tryCatch({
+        # PREPARE DATA FOR EXPORT
+        # STRATEGY: Extract only selected columns
+        # PURPOSE: Give users control over what data to export
+        export_data <- result_df$data[, input$export_columns, drop = FALSE]
+        
+        # EXPORT BASED ON FORMAT
+        # STRATEGY: Format-specific export functions
+        # PURPOSE: Support multiple common data formats
+        switch(input$data_format,
+          "csv" = write.csv(export_data, file, row.names = FALSE),
+          "xlsx" = {
+            # EXCEL EXPORT
+            # STRATEGY: Use openxlsx for Excel compatibility
+            # PURPOSE: Professional Excel output with proper formatting
+            if (!requireNamespace("openxlsx", quietly = TRUE)) {
+              stop("openxlsx package is required for Excel export")
+            }
+            openxlsx::write.xlsx(export_data, file, rowNames = FALSE)
+          },
+          "tsv" = write.table(export_data, file, sep = "\t", row.names = FALSE, quote = FALSE)
+        )
+        
+        # SUCCESS NOTIFICATION
+        # STRATEGY: User feedback on successful export
+        # PURPOSE: Confirm export completion and details
+        showNotification(
+          paste("Data exported successfully!", 
+                nrow(export_data), "rows,", 
+                ncol(export_data), "columns"),
+          type = "message"
+        )
+        
+      }, error = function(e) {
+        # ERROR HANDLING
+        # STRATEGY: Graceful error handling with user feedback
+        # PURPOSE: Inform user of export issues
+        showNotification(paste("Error exporting data:", e$message), type = "error")
+      })
+    }
+  )
   # ===========================================
   # END OF SERVER FUNCTION
   # ===========================================

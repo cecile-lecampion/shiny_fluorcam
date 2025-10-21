@@ -549,7 +549,16 @@ ui <- dashboardPage(
                               style = "margin-bottom: 10px; display: block;"
                             ),
                             uiOutput("control_group_ui")
-                          )
+                          ),
+                          # AJOUTEZ ICI LE CONTRÔLE POUR LE PARAMÈTRE k
+                          br(),
+                          numericInput("k_param", 
+                                       "qGAM Smoothing Parameter (k)", 
+                                       value = 5, 
+                                       min = 3, 
+                                       max = 20, 
+                                       step = 1),
+                          helpText("Higher values = smoother curves, lower values = more flexible curves")
                         ),
                         hr(),
 
@@ -668,6 +677,90 @@ ui <- dashboardPage(
                         # PURPOSE: Download configured plot with custom settings
                         downloadButton("download_plot", "Download Plot",
                                        class = "btn-success", icon = icon("image"))
+                    )
+                )
+            ),
+            
+            # ===========================================
+            # SECTION 5: DATA EXPORT
+            # ===========================================
+            # TITLE: Export Processed Data Table
+            # STRATEGY: Flexible data export options for user convenience
+            # PURPOSE: Allow users to download the processed data in various formats
+            div(class = "panel panel-primary",
+                # ACCORDION HEADER
+                div(class = "panel-heading",
+                    h4(class = "panel-title",
+                       tags$a(`data-toggle` = "collapse",
+                              `data-parent` = "#accordion",
+                              href = "#collapse5",
+                              icon("table"), " 5. Data Export"))
+                ),
+                # PANEL CONTENT - ONLY AVAILABLE AFTER DATA IS PROCESSED
+                div(id = "collapse5", class = "panel-collapse collapse",
+                    div(class = "panel-body",
+
+                        # DATA TABLE EXPORT SECTION
+                        div(
+                          class = "card",
+                          style = "margin-bottom: 20px;",
+                          div(
+                            class = "card-header",
+                            style = "background-color: #17a2b8; color: white; padding: 10px 15px;",
+                            h5(icon("table"), " Data Table Export", style = "margin: 0; display: inline-block;")
+                          ),
+                          div(
+                            class = "card-body",
+                            
+                            # COLUMN SELECTION FOR DATA EXPORT
+                            conditionalPanel(
+                              condition = "output.data_loaded",
+                              div(
+                                style = "margin-bottom: 15px;",
+                                h6("Select columns to export:", style = "margin-bottom: 10px;"),
+                                div(
+                                  style = "display: flex; gap: 10px; margin-bottom: 15px;",
+                                  actionButton("select_all_cols", "Select All", class = "btn-sm btn-outline-primary"),
+                                  actionButton("deselect_all_cols", "Deselect All", class = "btn-sm btn-outline-secondary")
+                                ),
+                                uiOutput("column_selection_ui")
+                              )
+                            ),
+                            
+                            # DATA EXPORT CONTROLS
+                            conditionalPanel(
+                              condition = "output.data_loaded",
+                              fluidRow(
+                                column(6,
+                                       textInput("data_filename", "Filename:", value = "fluorcam_data")
+                                ),
+                                column(6,
+                                       selectInput("data_format", "Format:",
+                                                  choices = list("CSV" = "csv", "Excel" = "xlsx", "Tab-delimited" = "tsv"),
+                                                  selected = "csv")
+                                )
+                              ),
+                              
+                              div(
+                                class = "text-center",
+                                style = "margin-top: 15px;",
+                                downloadButton("download_data", "Download Data Table",
+                                               class = "btn-info",
+                                               icon = icon("download"))
+                              )
+                            ),
+                            
+                            # NO DATA MESSAGE
+                            conditionalPanel(
+                              condition = "!output.data_loaded",
+                              div(
+                                class = "alert alert-info text-center",
+                                icon("info-circle"),
+                                " Load data first to enable table export"
+                              )
+                            )
+                          )
+                        )
                     )
                 )
             )

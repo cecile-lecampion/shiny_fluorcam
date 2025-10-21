@@ -526,7 +526,7 @@ analyse_barplot <- function(
       # AXIS LABELS
       # STRATEGY: Use variable names for clarity
       # PURPOSE: Self-documenting plots
-      labs(x = var1, y = measure_col)
+      labs(x = var1, y = paste0(measure_col, " (mean)"))
 
     # RETURN PARAMETRIC RESULTS
     # STRATEGY: Return both plot and all statistical results
@@ -687,7 +687,7 @@ analyse_barplot <- function(
           strip.text = element_text(face = "plain", size = 20, color = "black", hjust = 0.5)
         ) +
         facet_wrap(as.formula(paste("~", var1)), nrow = 1, scales = "free_y") +
-        labs(x = var1, y = measure_col)
+        labs(x = var1, y = paste0(measure_col, " (median)"))
 
       # RETURN NON-PARAMETRIC RESULTS
       # STRATEGY: Return all relevant non-parametric statistics
@@ -744,9 +744,9 @@ analyse_curve <- function(df, col_vector,
   # STRATEGY: Include user-specified time units in axis label
   # PURPOSE: Clear indication of time scale being analyzed
   x_axis_label <- if (!is.null(user_params$unit)) {
-    paste("Time (", user_params$unit, ")", sep = "")
+    user_params$unit
   } else {
-    "Time"  # Fallback if no unit specified
+    ""  # Fallback if no unit specified
   }
 
   # Y-AXIS LABEL FROM PARAMETER NAME

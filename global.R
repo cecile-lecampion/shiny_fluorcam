@@ -68,11 +68,10 @@ required_packages <- c(
   # ===========================================
   # UTILITY (1 package)
   # ===========================================
-  "htmltools"                 # HTML utilities - USED: ui.R (tags$head, tags$style, etc.)
+  "htmltools",                 # HTML utilities - USED: ui.R (tags$head, tags$style, etc.)
+  "openxlsx"                  # Excel file handling - USED: server.R (export functionality)
 )
 
-# PACKAGE COUNT SUMMARY: 23 packages (down from 28)
-# REMOVED: readr, plyr, ggpubr, svglite, shinycssloaders (5 packages)
 
 # ===========================================
 # SECTION 2: ENHANCED INSTALLATION STRATEGY
