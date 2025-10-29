@@ -21,7 +21,7 @@ affiliations:
   - name: Department of Molecular Sciences, Uppsala BioCenter, Swedish University of Agricultural Sciences and Linnean Center for Plant Biology, Uppsala, SE-75007 Sweden
     index: 2
 date: 29 0ctober 2025
-bibliography: paper.bib
+bibliography: paper/paper.bib
 ---
 
 
