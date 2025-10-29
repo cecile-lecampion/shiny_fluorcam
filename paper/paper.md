@@ -53,11 +53,15 @@ Both Bar plot (A) and Line Chart (B) are shown with statistical annotations.
 
 # Implementation
 
-The modular architecture separates concerns across ui.R (interface), server.R (logic), helpers.R (analysis functions), and global.R (configuration). CRAN-only dependencies ensure cross-platform stability while comprehensive error handling provides reliable failure recovery with clear user feedback.
+The modular architecture separates concerns across ui.R (interface), server.R (logic), helpers.R (analysis functions),
+and global.R (configuration). CRAN-only dependencies ensure cross-platform stability while comprehensive error handling provides
+reliable failure recovery with clear user feedback.
 
 # Development prospects
 
-Future versions will include additional options, such as the ability to modify the color of each bar in a barplot independently, and to represent measurements collected over multiple days as a curve. The application will also be extended to integrate tools from other providers by supporting additional file formats.
+Future versions will include additional options, such as the ability to modify the color of each bar in a barplot independently,
+and to represent measurements collected over multiple days as a curve. The application will also be extended to integrate mesurement tools from 
+other providers by supporting additional file formats.
 
 # Acknowledgments
 

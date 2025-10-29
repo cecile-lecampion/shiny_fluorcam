@@ -137,6 +137,10 @@ Detailed step-by-step usage instructions are available in the **help.md** docume
 Sample FluorCam `.TXT` files for testing and demonstration purposes can be found in the `sample_data/` directory within the application folder. Users are encouraged to utilize these files to familiarize themselves with the application's features and functionalities.  
 > Currently, only PSI FluorCam `.TXT` files are supported.
 
+# Contributing
+Contributions to the FluorCam Toolbox are welcome! If you have feature requests or suggestions, feel free to contact us at <a href="mailto:cecile.lecampion@univ-amu.fr">cecile.lecampion@univ-amu.fr</a> or open an issue on the GitHub repository.  
+If you use a mesurement tool from a provider other than PSI and would like to see support for it in FluorCam Toolbox, please reach out to us.
+
 ## License
 
 This project is licensed under the MIT License - see the repository for details.
