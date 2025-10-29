@@ -460,7 +460,7 @@ ui <- dashboardPage(
                         # STRATEGY: Flexible pattern matching for different file types
                         # PURPOSE: Support various file extensions and naming patterns
                         textInput("pattern", "File Pattern", 
-                                  value = ".TXT",
+                                  value = ".TXT|.txt",
                                   placeholder = "e.g., .TXT, .csv"),
 
                         # FILE PREVIEW CONTROLS
