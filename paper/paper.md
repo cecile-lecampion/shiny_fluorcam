@@ -42,21 +42,23 @@ The tool serves plant biologists, ecophysiologists, and agricultural researchers
 
 # Key Features
 
-**Automated Data Processing**: Native support for FluorCam .TXT files with batch processing, automatic parameter calculation (Fv/Fm, NPQ), and systematic file naming validation (\autoref{fig:FluorCamToolbox_gui}).
+**Automated Data Processing**: Native support for FluorCam .TXT files with batch processing, automatic parameter calculation (Fv/Fm, NPQ), and systematic file naming validation (figure 1).
 
-![Figure 1: Screen shot of FluorCam Toolbox user interface.\label{fig:FluorCamToolbox_gui}](images/FluorCamToolbox_gui.png)
-On the left, the accordion for analysis parameter is open showing the customizing options. In the main panel the first line of the assembled data are shown.
+![Figure 1: Screen shot of FluorCam Toolbox user interface](images/FluorCamToolbox_gui.png)
+Figure 1: Screen shot of FluorCam Toolbox user interface.  
+On the left, the accordion for analysis parameter is open showing the customizing options. In the main panel the first line of the assembled data are shown.  
 
 **Robust Statistical Analysis**: Automatic normality testing is used to decide whether the data meet the assumptions required for parametric analysis.
 When they do, the software applies ANOVA (Analysis of Variance) followed by Tukey’s HSD (Honestly Significant Difference) test to identify which groups differ significantly.
 When the data are not normally distributed, it instead performs the non-parametric Kruskal–Wallis test with Dunn’s post-hoc comparisons.
 For time-course data, the software employs quantile Generalized Additive Models (qGAMs), which provide flexible curve fitting while remaining robust to outliers and non-uniform variance.
 
-**Publication-Ready Visualization**: Dynamic plots with statistical annotations [@graves2024], customizable themes (\autoref{fig:visualization_panel}), and multi-format export (PNG, PDF, SVG).
+**Publication-Ready Visualization**: Dynamic plots with statistical annotations [@graves2024], customizable themes (figure 2), and multi-format export (PNG, PDF, SVG).
 The interface adapts to data structure with guided workflow and progressive disclosure.
 
-![Screen shot of FluorCam Toolbox visualization panel.\label{fig:visualization_panel}](images/visualization_panel.png)
-Both Bar plot (A) and Line Chart (B) are shown with statistical annotations.
+![Screen shot of FluorCam Toolbox visualization panel](images/visualization_panel.png)
+Figure 2: Screen shot of FluorCam Toolbox visualization panel.  
+Both Bar plot (A) and Line Chart (B) are shown with statistical annotations.  
 
 **Multi-User Deployment**: Session isolation with automatic cleanup, file validation, and security features enable safe server deployment for institutional use.
 
