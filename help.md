@@ -109,6 +109,10 @@ Your .TXT files should contain:
 - **Dimensions**: Customizable width and height
 - **Quality**: High resolution (300 DPI for raster formats)
 
+### 5. Processed Data Export
+- **Custom Data Export**: Choose specific columns to export processed data
+- **Formats**: Tab-separated .tsv file or .csv file or Excel .xlsx file
+
 ---
 
 ## Analysis Types Explained
@@ -165,7 +169,7 @@ Your .TXT files should contain:
 
 1. **"No files found"**: 
    - Check file naming pattern matches VAR1_VAR2_VAR3.TXT
-   - Verify file extension (.TXT vs .txt)
+   - Verify file extension
    - Ensure files are in the selected directory
 
 2. **"Missing columns"**: 
@@ -209,7 +213,5 @@ Your .TXT files should contain:
 
 ## Contact and Support
 
-For issues or questions about the FluorCam Data Analysis Toolbox, please refer to the documentation or contact the development team.
+For issues or questions about the FluorCam Data Analysis Toolbox, please refer to the documentation or contact the development team at <a href="mailto:cecile.lecampion@univ-amu.fr">cecile.lecampion@univ-amu.fr</a>.
 
-**Version**: Current as of analysis toolbox implementation
-**Last updated**: Analysis features and export functionality
