@@ -44,7 +44,7 @@ The tool serves plant biologists, ecophysiologists, and agricultural researchers
 
 **Automated Data Processing**: Native support for FluorCam .TXT files with batch processing, automatic parameter calculation (Fv/Fm, NPQ), and systematic file naming validation (\autoref{fig:FluorCamToolbox_gui}).
 
-![Figure 1: Screen shot of FluorCam Toolbox user interface.](images/FluorCamToolbox_gui.png){#fig:FluorCamToolbox_gui}
+![Figure 1: Screen shot of FluorCam Toolbox user interface.\label{fig:FluorCamToolbox_gui}](images/FluorCamToolbox_gui.png)
 On the left, the accordion for analysis parameter is open showing the customizing options. In the main panel the first line of the assembled data are shown.
 
 **Robust Statistical Analysis**: Automatic normality testing is used to decide whether the data meet the assumptions required for parametric analysis.
@@ -55,7 +55,7 @@ For time-course data, the software employs quantile Generalized Additive Models 
 **Publication-Ready Visualization**: Dynamic plots with statistical annotations [@graves2024], customizable themes (\autoref{fig:visualization_panel}), and multi-format export (PNG, PDF, SVG).
 The interface adapts to data structure with guided workflow and progressive disclosure.
 
-![Screen shot of FluorCam Toolbox visualization panel.](images/visualization_panel.png){#fig:visualization_panel}
+![Screen shot of FluorCam Toolbox visualization panel.\label{fig:visualization_panel}](images/visualization_panel.png)
 Both Bar plot (A) and Line Chart (B) are shown with statistical annotations.
 
 **Multi-User Deployment**: Session isolation with automatic cleanup, file validation, and security features enable safe server deployment for institutional use.
