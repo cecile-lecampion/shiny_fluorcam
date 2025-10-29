@@ -42,7 +42,7 @@ The tool serves plant biologists, ecophysiologists, and agricultural researchers
 
 # Key Features
 
-**Automated Data Processing**: Native support for FluorCam .TXT files with batch processing, automatic parameter calculation (Fv/Fm, NPQ), and systematic file naming validation (\@ref(fig:FluorCamToolbox_gui)).
+**Automated Data Processing**: Native support for FluorCam .TXT files with batch processing, automatic parameter calculation (Fv/Fm, NPQ), and systematic file naming validation (@fig:FluorCamToolbox_gui).
 
 ![Screen shot of FluorCam Toolbox user interface.](images/FluorCamToolbox_gui.png){#fig:FluorCamToolbox_gui}
 On the left, the accordion for analysis parameter is open showing the customizing options. In the main panel the first line of the assembled data are shown.
@@ -52,7 +52,7 @@ When they do, the software applies ANOVA (Analysis of Variance) followed by Tuke
 When the data are not normally distributed, it instead performs the non-parametric Kruskal–Wallis test with Dunn’s post-hoc comparisons.
 For time-course data, the software employs quantile Generalized Additive Models (qGAMs), which provide flexible curve fitting while remaining robust to outliers and non-uniform variance.
 
-**Publication-Ready Visualization**: Dynamic plots with statistical annotations [@graves2024], customizable themes (\@ref(fig:visualization_panel)), and multi-format export (PNG, PDF, SVG).
+**Publication-Ready Visualization**: Dynamic plots with statistical annotations [@graves2024], customizable themes (@fig:visualization_panel), and multi-format export (PNG, PDF, SVG).
 The interface adapts to data structure with guided workflow and progressive disclosure.
 
 ![Screen shot of FluorCam Toolbox visualization panel.](images/visualization_panel.png){#fig:visualization_panel}
