@@ -58,7 +58,7 @@ Comprehensive documentation, CRAN-only dependencies, session isolation for multi
 
 Laboratory colleagues, as first adopters, now routinely use the toolbox for PSI FluorCam data, replacing error-prone manual spreadsheets and inaccessible R scripts. 
 
- # AI Usage Disclosure
+# AI Usage Disclosure
 
 AI-based tools were used to assist with English language editing to improve clarity and readability. An AI-based tool (Github Copilot) was also used to support an iterative process of code development, including suggestions for syntax, structure, and debugging. The software design, implementation choices, analyses, and validation were carried out by the authors. All text and code were reviewed, tested, and validated by the authors, who take full responsibility for the work.
 
