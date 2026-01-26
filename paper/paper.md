@@ -40,6 +40,28 @@ Existing solutions lack integration between data processing, statistical analysi
 FluorCam Toolbox addresses this gap by providing a user-friendly platform that democratizes access to sophisticated fluorescence analysis while maintaining statistical rigor and reproducibility.
 The tool serves plant biologists, ecophysiologists, and agricultural researchers using chlorophyll fluorescence for stress assessment, climate research, and crop improvement.
 
+# Software Design
+
+The creation of FluorCam Toolbox stemmed from the need to empower plant biologists with high-quality chlorophyll fluorescence analysis, free from the barriers of complex scripting languages, cryptic error messages, and manual spreadsheet processing that hinder result interpretation. 
+
+Key trade-offs prioritized user-friendliness and robustness over maximal flexibility. A modular architecture employs reactive programming principles, using ReactiveValues for shared mutable storage to enable efficient updates alongside comprehensive validation pipelines that prevent invalid analyses. The accordion layout enforces a logical workflow, from file configuration and data loading to analysis and export, while reducing visual clutter. Conditional UI elements and dynamic dropdowns populated from actual data columns further adapt to diverse FluorCam configurations without overwhelming users.
+
+No existing packages provide this end-to-end integration for FluorCam data. Contributing to fragmented script repositories would not have provided a coherent solution or resolved the usability issues, which justifies the creation of a new standalone Shiny application to democratize advanced analyses.
+
+# Research Impact Statement
+
+FluorCam Toolbox was initially developed to meet the analysis needs of plant biology researchers in our laboratory, where it has been enthusiastically adopted as the primary tool for chlorophyll fluorescence data processing. Early users provided valuable feedback that directly informed iterative improvements, and the tool is now expanding its reach with adoption by collaborators at Uppsala University (Sweden) and the University of Bristol (UK), signaling growing external use beyond our institution.
+
+Tailored for widely used PSI FluorCam systems, which lack any manufacturer-provided analysis software, the toolbox fills a critical gap for the plant biology community by integrating seamless data processing, advanced statistics, and customizable plots. 
+
+Comprehensive documentation, CRAN-only dependencies, session isolation for multi-user deployment, and an open-source license under preparation ensure community readiness. Future releases and contributions via GitHub will support reproducible photosynthesis research at scale.
+
+Laboratory colleagues, as first adopters, now routinely use the toolbox for PSI FluorCam data, replacing error-prone manual spreadsheets and inaccessible R scripts. 
+
+ # AI Usage Disclosure
+
+AI-based tools were used to assist with English language editing to improve clarity and readability. An AI-based tool (Github Copilot) was also used to support an iterative process of code development, including suggestions for syntax, structure, and debugging. The software design, implementation choices, analyses, and validation were carried out by the authors. All text and code were reviewed, tested, and validated by the authors, who take full responsibility for the work.
+
 # Key Features
 
 **Automated Data Processing**: Native support for FluorCam .TXT files with batch processing, automatic parameter calculation (Fv/Fm, NPQ), and systematic file naming validation (figure 1).
