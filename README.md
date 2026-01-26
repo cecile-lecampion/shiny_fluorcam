@@ -52,7 +52,7 @@ For individual use on your personal computer:
    - Go to `File` -> `Open File...`
    - Select the `App.R` in the `shiny_fluorcam` directory
    - Click the `Run App` button in the panel at the top left of the RStudio IDE.
- 
+
    The application will open in your default web browser.
 
 > Note: During the first launch, R will automatically install all required packages specified in the `global.R` file.
