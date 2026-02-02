@@ -36,7 +36,7 @@ server <- function(input, output, session) {
   output$dirpath <- renderText({ dirpath() })
   
   # ===========================================
-  # SECTION 1.5: SESSION-SPECIFIC FILE MANAGEMENT
+  # SECTION 1.1: SESSION-SPECIFIC FILE MANAGEMENT
   # ===========================================
   # STRATEGY: Create unique workspace for each user session
   # PURPOSE: Isolate user files and enable automatic cleanup
@@ -89,6 +89,87 @@ server <- function(input, output, session) {
   observeEvent(reactiveTimer(30 * 60 * 1000)(), {
     cleanup_old_sessions()
   })
+   
+  # ===========================================
+  # SECTION 1.2: DYNAMIC UI FOR VARIABLE NAMING PATTERN
+  # ===========================================
+  # STRATEGY: Generate dynamic UI for file naming configuration
+  # PURPOSE: Allow flexible number of variables in file names
+
+  # Generate naming pattern info dynamically
+  output$naming_pattern_info <- renderUI({
+    num_vars <- input$num_vars
+    if (is.null(num_vars)) num_vars <- 3
+    
+    # Create pattern string
+    pattern_parts <- paste0("VAR", 1:num_vars)
+    pattern <- paste(pattern_parts, collapse = "_")
+    pattern_full <- paste0(pattern, ".TXT")
+    
+    # Create example
+    example_values <- c("Day1", "LineA", "Plant001", "Rep1", "Treatment1", "Block1")
+    example <- paste(example_values[1:num_vars], collapse = "_")
+    example_full <- paste0(example, ".TXT")
+    
+    div(class = "alert alert-info", style = "margin-bottom: 15px;",
+        icon("info-circle"),
+        strong(" Required File Naming Pattern:"),
+        br(), br(),
+        tags$code(pattern_full, 
+                 style = "font-size: 14px; background-color: #f8f9fa; padding: 15px; display: block;"),
+        br(),
+        em(paste0("Example: ", example_full))
+    )
+  })
+
+  # Generate dynamic variable name inputs
+  output$dynamic_var_inputs <- renderUI({
+    num_vars <- input$num_vars
+    if (is.null(num_vars)) num_vars <- 3
+    
+    # Default names for variables
+    default_names <- c("Day", "Line", "PlantID", "Replicate", "Treatment", "Block")
+    
+    # Calculate number of columns based on number of variables
+    col_width <- 12 / num_vars
+    if (col_width < 3) col_width <- 3  # Minimum width
+    # Create inputs for each variable
+    var.inputs <- lapply(1:num_vars, function(i) {
+      default_value <- if (i <= length(default_names)) default_names[i] else paste0("Var", i)
+      
+      column(col_width,
+             div(style = "text-align: center; margin-bottom: 10px;",
+                 strong(paste0("VAR", i)),
+                 textInput(paste0("var", i), 
+                          NULL, 
+                          value = default_value, 
+                          placeholder = paste0("e.g., ", default_value))
+             )
+      )
+    })
+    
+    # Return in a fluidRow
+    do.call(fluidRow, var.inputs)
+  })
+
+  # Generate filename example
+  output$filename_example <- renderText({
+    num_vars <- input$num_vars
+    if (is.null(num_vars)) num_vars <- 3
+    
+    # Get variable names from inputs
+    var_names <- sapply(1:num_vars, function(i) {
+      var_name <- input[[paste0("var", i)]]
+      if (is.null(var_name) || var_name == "") {
+        paste0("Var", i, "1")
+      } else {
+        paste0(var_name, ifelse(i == num_vars, "001", ifelse(i == 1, "1", "A")))
+      }
+    })
+    
+    # Create example filename
+    paste0(paste(var_names, collapse = "_"), ".TXT")
+  })
 
   # ===========================================
   # SECTION 2: FILE UPLOAD FUNCTIONALITY
@@ -101,6 +182,7 @@ server <- function(input, output, session) {
   # PURPOSE: Handle file uploads, validate naming convention, and organize in session directory
   observeEvent(input$uploaded_files, {
     req(input$uploaded_files)
+    req(input$num_vars)  # Need to know expected number of variables
 
     tryCatch({
       # COPY UPLOADED FILES TO SESSION DIRECTORY
@@ -110,14 +192,20 @@ server <- function(input, output, session) {
       original_names <- input$uploaded_files$name
 
       # VALIDATE FILE NAMES
-      # STRATEGY: Check naming convention before processing
+      # STRATEGY: Check naming convention before processing (dynamic based on num_vars)
       # PURPOSE: Early validation to prevent processing errors
       invalid_files <- c()
       valid_files <- c()
+      
+      # Build dynamic pattern based on number of variables
+      # STRATEGY: Create regex pattern that matches exact number of underscores
+      # PURPOSE: Ensure file naming convention matches user specification
+      num_underscores <- input$num_vars - 1
+      pattern <- paste0("^", paste(rep("[^_]+", input$num_vars), collapse = "_"), "\\.(txt|TXT)$")
 
       for (i in seq_along(original_names)) {
-        # CHECK NAMING PATTERN: VAR1_VAR2_VAR3.txt
-        if (grepl("^[^_]+_[^_]+_[^_]+\\.(txt|TXT)$", original_names[i])) {
+        # CHECK NAMING PATTERN: Dynamic based on num_vars
+        if (grepl(pattern, original_names[i])) {
           # COPY TO SESSION DIRECTORY
           dest_path <- file.path(session_dir, original_names[i])
           file.copy(uploaded_paths[i], dest_path, overwrite = TRUE)
@@ -131,8 +219,10 @@ server <- function(input, output, session) {
       # STRATEGY: Provide user feedback on file validation results
       # PURPOSE: Inform user of successful uploads and naming issues
       if (length(invalid_files) > 0) {
+        # Create expected pattern example for user
+        pattern_example <- paste(rep("VAR", input$num_vars), collapse = "_")
         showNotification(
-          paste("Invalid file names (must be VAR1_VAR2_VAR3.txt):",
+          paste0("Invalid file names (must be ", pattern_example, ".txt): ",
                 paste(invalid_files, collapse = ", ")),
           type = "warning", duration = 10
         )
@@ -436,8 +526,20 @@ server <- function(input, output, session) {
   # STRATEGY: Event-driven data processing with comprehensive validation
   # PURPOSE: Process uploaded files and prepare data for analysis
   observeEvent(input$load, {
-    # INPUT VALIDATION
-    req(input$pattern, input$var1, input$var2, input$var3)
+    # INPUT VALIDATION - DYNAMIC BASED ON NUMBER OF VARIABLES
+    req(input$pattern)
+    req(input$num_vars)
+    
+    # Validate all variable name inputs
+    var_names <- sapply(1:input$num_vars, function(i) {
+      input[[paste0("var", i)]]
+    })
+    
+    # Check if all variables are defined
+    if (any(is.null(var_names)) || any(var_names == "")) {
+      showNotification("Please define all variable names before loading data.", type = "error")
+      return()
+    }
 
     # CHECK IF FILES EXIST IN SESSION
     available_files <- list.files(session_dir, pattern = input$pattern, full.names = TRUE)
@@ -455,21 +557,17 @@ server <- function(input, output, session) {
     # STRATEGY: Store inputs in local variables for processing
     # PURPOSE: Clean code and consistent variable access
     pattern <- input$pattern
-    var1 <- input$var1
-    var2 <- input$var2
-    var3 <- input$var3
-    
+  
     # MAIN DATA PROCESSING
     tryCatch({
-      # CALL DATA PROCESSING FUNCTION WITH SESSION DIRECTORY
-      # STRATEGY: Delegate complex processing to helper function
-      # PURPOSE: Keep server code clean, enable testing of processing logic
+      # CALL DATA PROCESSING FUNCTION
+      # STRATEGY: Pass variable names as character vector
+      # PURPOSE: Support flexible number of variables
+    
       processed_data <- process_data_files(
         pattern = pattern,
-        var1 = var1, 
-        var2 = var2, 
-        var3 = var3, 
-        dirpath = session_dir  # Use session directory
+        var_names = var_names,  # Pass as simple character vector
+        dirpath = session_dir
       )
       
       # DATA VALIDATION
@@ -495,9 +593,9 @@ server <- function(input, output, session) {
       # ERROR HANDLING
       # STRATEGY: User-friendly error messages + console logging for debugging
       showNotification(paste("Failed to load data files:", e$message), type = "error")
-      print(e)  # Console logging for developers
+      print(e)
     })
-  })
+})
   
   # ===========================================
   # SECTION 5: DATA TABLE RENDERING
@@ -576,9 +674,11 @@ server <- function(input, output, session) {
     req(input$graph_type == "Curve")  # Only for curve analysis
 
     all_cols <- colnames(result_df$data)
-    # PATTERN EXTRACTION: Find columns with time point suffixes (_L1, _D2, etc.)
-    # STRATEGY: Regular expression to identify parameter families
-    roots <- unique(sub("(_L[0-9]+|_D[0-9]+)$", "", all_cols[grepl("(_L[0-9]+|_D[0-9]+)$", all_cols)]))
+    # PATTERN EXTRACTION: Find columns with time point suffixes
+    # STRATEGY: Support both standard (_L1, _D1) and subsecond (_Lss1, _Dss1) formats
+    # PURPOSE: Handle different FluorCam export formats
+    pattern <- "(_L[0-9]+|_D[0-9]+|_Lss[0-9]+|_Dss[0-9]+)$"
+    roots <- unique(sub(pattern, "", all_cols[grepl(pattern, all_cols)]))
     selectInput("root", "Select the parameter root", choices = roots)
   })
   
@@ -592,8 +692,9 @@ server <- function(input, output, session) {
       # CURVE ANALYSIS: Multiple time point columns
       req(input$root)
       all_cols <- colnames(result_df$data)
-      # BUILD PATTERN: Find all columns matching the selected root
-      pattern <- paste0("^", input$root, "(_L[0-9]+|_D[0-9]+)$")
+      # BUILD PATTERN: Support both standard and subsecond formats
+      # STRATEGY: Extended regex to match all time point formats
+      pattern <- paste0("^", input$root, "(_L[0-9]+|_D[0-9]+|_Lss[0-9]+|_Dss[0-9]+)$")
       available_choices <- all_cols[grepl(pattern, all_cols)]
       
       # PROVIDE CONVENIENCE BUTTON + MULTI-SELECT
@@ -622,7 +723,8 @@ server <- function(input, output, session) {
   observeEvent(input$select_all_params, {
     req(input$root)
     all_cols <- colnames(result_df$data)
-    pattern <- paste0("^", input$root, "(_L[0-9]+|_D[0-9]+)$")
+    # UPDATED PATTERN: Support both standard and subsecond formats
+    pattern <- paste0("^", input$root, "(_L[0-9]+|_D[0-9]+|_Lss[0-9]+|_Dss[0-9]+)$")
     available_choices <- all_cols[grepl(pattern, all_cols)]
     
     # UPDATE SELECTION: Use updateSelectInput for programmatic changes
@@ -728,7 +830,7 @@ server <- function(input, output, session) {
     # DYNAMIC INPUT GENERATION
     # STRATEGY: Create input fields for each selected parameter
     # PURPOSE: Allow individual time value specification
-    value_inputs <- lapply(params, function(param) {
+    value.inputs <- lapply(params, function(param) {
       div(
         style = "margin-bottom: 15px; padding: 10px; background-color: #f8f9fa; border-radius: 5px;",
         numericInput(paste0("value_", param), 
@@ -787,7 +889,7 @@ server <- function(input, output, session) {
         
         div(
           style = "max-height: 300px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 5px; padding: 15px; background-color: white;",
-          do.call(tagList, value_inputs)
+          do.call(tagList, value.inputs)
         )
       ),
       
@@ -909,14 +1011,14 @@ server <- function(input, output, session) {
       # STRATEGY: Dynamic number of color inputs based on data
       req(input$var2)
       n_lines <- length(unique(result_df$data[[input$var2]]))
-      color_inputs <- lapply(seq_len(n_lines), function(i) {
+      color.inputs <- lapply(seq_len(n_lines), function(i) {
         colourInput(
           inputId = paste0("curve_color_", i),
           label = tags$span(paste("Color for VAR", i), style = "font-weight: normal;"),
           value = scales::hue_pal()(n_lines)[i]  # Default rainbow colors
         )
       })
-      do.call(tagList, color_inputs)
+      do.call(tagList, color.inputs)
     }
   })
   
@@ -943,6 +1045,211 @@ server <- function(input, output, session) {
     print("Switching to Analysis Results tab")
     updateTabsetPanel(session, "main_tabs", selected = "Analysis Results")
   })
+  # ===========================================
+  # SECTION 11.5: CONVERT TO CURVE BUTTON
+  # ===========================================
+  # STRATEGY: Allow conversion of bar plot to line plot
+  # PURPOSE: Visualize time series trends from bar plot data
+  
+  # SHOW CONVERT BUTTON ONLY FOR BAR PLOTS
+  # STRATEGY: Conditional UI based on analysis type
+  # PURPOSE: Button appears only when bar plot is generated
+  output$convert_to_curve_button <- renderUI({
+    req(current_plot())
+    req(input$graph_type == "Bar plot")
+    
+    div(
+      style = "text-align: center; margin: 20px 0;",
+      actionButton(
+        "convert_to_curve",
+        HTML("<i class='fa fa-chart-line'></i> Convert to Curve"),
+        class = "btn-primary btn-sm",
+        style = "background-color: #17a2b8; 
+                 border-color: #17a2b8; 
+                 font-weight: 600;
+                 border-radius: 20px;
+                 padding: 8px 20px;"
+      )
+    )
+  })
+  # ===========================================
+  # SECTION 11.6: BAR PLOT TO CURVE CONVERSION (CORRECTED)
+  # ===========================================
+  # STRATEGY: Convert bar plot faceted data to line plot with multiple curves
+  # PURPOSE: Visualize trends across time/groups in a single plot
+  
+  # CONVERTED CURVE PLOT STORAGE
+  # STRATEGY: Separate reactive storage for converted plot
+  # PURPOSE: Allow switching between original and converted views
+  converted_plot <- reactiveVal(NULL)
+  show_converted <- reactiveVal(FALSE)
+  
+  # CONVERSION AND TOGGLE EVENT HANDLER (COMBINED)
+  # STRATEGY: Single event handler for both conversion and toggling
+  # PURPOSE: Avoid conflicts between multiple observers on same input
+  observeEvent(input$convert_to_curve, {
+    req(current_plot())
+    req(result_df$data)
+    req(input$graph_type == "Bar plot")
+    
+    # CHECK IF WE'RE TOGGLING BACK TO ORIGINAL
+    if (!is.null(converted_plot()) && show_converted()) {
+      # TOGGLE BACK TO BAR PLOT
+      show_converted(FALSE)
+      
+      # RESTORE ORIGINAL BUTTON
+      output$convert_to_curve_button <- renderUI({
+        div(
+          style = "text-align: center; margin: 20px 0;",
+          actionButton(
+            "convert_to_curve",
+            HTML("<i class='fa fa-chart-line'></i> Convert to Curve"),
+            class = "btn-primary btn-sm",
+            style = "background-color: #17a2b8; 
+                     border-color: #17a2b8; 
+                     font-weight: 600;
+                     border-radius: 20px;
+                     padding: 8px 20px;"
+          )
+        )
+      })
+      return()  # Stop here, don't do conversion
+    }
+    
+    # IF NOT TOGGLING BACK, DO THE CONVERSION
+    tryCatch({
+      # STORE COLUMN NAMES AS SIMPLE STRINGS
+      value_col <- as.character(VALUE()[1])
+      x_col <- as.character(x_var())
+      facet_col <- as.character(facet_var())
+      
+      # DEBUG
+      print(paste("Converting with columns:", x_col, facet_col, value_col))
+      
+      # EXTRACT DATA - SIMPLE APPROACH
+      plot_data <- result_df$data[, c(x_col, facet_col, value_col)]
+      
+      # CONVERT X TO NUMERIC
+      x_values <- plot_data[[x_col]]
+      x_numeric <- suppressWarnings(as.numeric(as.character(x_values)))
+      
+      if (all(is.na(x_numeric))) {
+        # Categorical x variable
+        x_numeric <- as.numeric(factor(x_values, levels = input$var2_order))
+        x_labels <- input$var2_order
+        use_labels <- TRUE
+      } else {
+        use_labels <- FALSE
+      }
+      
+      # ADD X NUMERIC TO DATA
+      plot_data$x_numeric <- x_numeric
+      
+      # CALCULATE SUMMARY - SIMPLE BASE R APPROACH
+      # STRATEGY: Use aggregate instead of dplyr to avoid .data issues
+      # PURPOSE: Simpler, more reliable aggregation
+      
+      # Create a grouping key
+      plot_data$group_key <- paste(plot_data[[facet_col]], plot_data$x_numeric, sep = "_")
+      
+      # Calculate means
+      means <- aggregate(plot_data[[value_col]], 
+                        by = list(facet = plot_data[[facet_col]], 
+                                 x = plot_data$x_numeric),
+                        FUN = mean, na.rm = TRUE)
+      names(means)[3] <- "mean_value"
+      
+      # Calculate standard errors
+      se_calc <- function(x) {
+        sd(x, na.rm = TRUE) / sqrt(sum(!is.na(x)))
+      }
+      
+      ses <- aggregate(plot_data[[value_col]], 
+                      by = list(facet = plot_data[[facet_col]], 
+                               x = plot_data$x_numeric),
+                      FUN = se_calc)
+      names(ses)[3] <- "se_value"
+      
+      # Merge
+      summary_data <- merge(means, ses, by = c("facet", "x"))
+      
+      # GENERATE COLORS
+      n_groups <- length(unique(summary_data$facet))
+      colors <- scales::hue_pal()(n_groups)
+      names(colors) <- unique(summary_data$facet)
+      
+      # CREATE PLOT - USING DIRECT COLUMN REFERENCES
+      line_plot <- ggplot(summary_data, aes(x = x, y = mean_value)) +
+        geom_ribbon(aes(ymin = mean_value - se_value, 
+                       ymax = mean_value + se_value,
+                       fill = facet, group = facet),
+                   alpha = 0.2, color = NA) +
+        geom_line(aes(color = facet, group = facet), linewidth = 1.2) +
+        geom_point(aes(color = facet, group = facet), 
+                  size = 3, shape = 21, fill = "white", stroke = 1.5) +
+        labs(
+          x = x_col,
+          y = value_col,
+          color = facet_col,
+          fill = facet_col,
+          title = paste("Curve representation of", value_col)
+        ) +
+        # THEME
+        theme_classic(base_size = 14) +
+        theme(
+          legend.position = "right",
+          legend.title = element_text(face = "bold"),
+          axis.title = element_text(face = "bold", size = 13),
+          axis.text = element_text(size = 12),
+          plot.title = element_text(face = "bold", size = 15, hjust = 0.5),
+          panel.grid.major.y = element_line(color = "grey90"),
+          legend.background = element_rect(fill = "white", color = "grey80")
+        ) +
+        # COLOR SCALES
+        scale_color_manual(values = colors) +
+        scale_fill_manual(values = colors)
+      
+      # CUSTOM X-AXIS LABELS IF CATEGORICAL
+      if (use_labels) {
+        line_plot <- line_plot + 
+          scale_x_continuous(breaks = seq_along(x_labels), labels = x_labels)
+      }
+      
+      # STORE CONVERTED PLOT
+      converted_plot(line_plot)
+      show_converted(TRUE)
+      
+      # UPDATE BUTTON TEXT
+      output$convert_to_curve_button <- renderUI({
+        div(
+          style = "text-align: center; margin: 20px 0;",
+          actionButton(
+            "convert_to_curve",
+            HTML("<i class='fa fa-chart-bar'></i> Show Original Bar Plot"),
+            class = "btn-secondary btn-sm",
+            style = "font-weight: 600;
+                     border-radius: 20px;
+                     padding: 8px 20px;"
+          )
+        )
+      })
+      
+      showNotification("Bar plot converted to curve successfully!", type = "message")
+      
+    }, error = function(e) {
+      showNotification(paste("Error converting to curve:", e$message), type = "error")
+      print(e)
+      print(traceback())
+    })
+  })
+  
+  # SUPPRIMEZ COMPLÈTEMENT CETTE SECTION (lignes ~936-960)
+  # Elle entre en conflit avec l'observateur ci-dessus
+  # observeEvent(input$convert_to_curve, {
+  #   if (!is.null(converted_plot()) && show_converted()) {
+  #     ...
+  #   }
+  # }, ignoreInit = TRUE)
   
   # ===========================================
   # SECTION 12: MAIN ANALYSIS ENGINE
@@ -955,6 +1262,14 @@ server <- function(input, output, session) {
   # PURPOSE: Enable export functionality independent of display
   current_plot <- reactiveVal(NULL)
   current_stats <- reactiveVal(NULL)
+
+  # RESET CONVERTED PLOT ON NEW ANALYSIS
+  # STRATEGY: Clear converted plot when new analysis is run
+  # PURPOSE: Prevent showing old converted plot with new data
+  observeEvent(input$start_analysis, {
+    converted_plot(NULL)
+    show_converted(FALSE)
+  })
 
   # MAIN ANALYSIS REACTIVE
   # STRATEGY: Event-driven analysis execution
@@ -1079,10 +1394,16 @@ server <- function(input, output, session) {
     }
   })
 
-  # PLOT RENDERING
-  # STRATEGY: Display analysis results in main panel
-  # PURPOSE: Show generated plots to users
+  # PLOT RENDERING (MODIFIED)
+  # STRATEGY: Display converted plot when available, otherwise show original
+  # PURPOSE: Seamless switching between bar and line representations
   output$plot_result <- renderPlot({
+    # PRIORITY: Show converted plot if available and flag is TRUE
+    if (!is.null(converted_plot()) && show_converted()) {
+      return(converted_plot())
+    }
+    
+    # DEFAULT: Show original analysis result
     analysis_results()
   })
 
@@ -1303,34 +1624,40 @@ server <- function(input, output, session) {
     contentType = "application/zip"
   )
 
-  # 13.2 PLOT EXPORT
-  # STRATEGY: High-quality plot export with user customization using downloadHandler
-  # PURPOSE: Professional plot output downloadable to client machine
+  # 13.2 PLOT EXPORT (MODIFIED)
+  # STRATEGY: Export currently displayed plot (original or converted)
+  # PURPOSE: Allow export of either representation
   output$download_plot <- downloadHandler(
     filename = function() {
-      # ENSURE PROPER FILE EXTENSION
-      # STRATEGY: Clean filename handling with proper extensions
-      # PURPOSE: Prevent file extension issues on different systems
       base_filename <- tools::file_path_sans_ext(input$plot_filename)
+      # ADD SUFFIX IF CONVERTED PLOT
+      if (!is.null(converted_plot()) && show_converted()) {
+        base_filename <- paste0(base_filename, "_curve")
+      }
       paste0(base_filename, ".", input$plot_format)
     },
     content = function(file) {
-      req(current_plot())  # Require completed analysis
+      # DETERMINE WHICH PLOT TO EXPORT
+      plot_to_export <- if (!is.null(converted_plot()) && show_converted()) {
+        converted_plot()
+      } else {
+        current_plot()
+      }
+      
+      req(plot_to_export)
 
-      # PLOT EXPORT EXECUTION
-      # STRATEGY: Format-specific export with user-defined dimensions
-      # PURPOSE: High-quality output suitable for different use cases
       tryCatch({
-        # STORE FILENAME FOR NOTIFICATION
-        export_filename <- paste0(tools::file_path_sans_ext(input$plot_filename), ".", input$plot_format)
+        export_filename <- paste0(tools::file_path_sans_ext(input$plot_filename), 
+                                 if (!is.null(converted_plot()) && show_converted()) "_curve" else "",
+                                 ".", input$plot_format)
         
         ggsave(
           filename = file,
-          plot = current_plot(),
+          plot = plot_to_export,
           width = as.numeric(input$plot_width),
           height = as.numeric(input$plot_height),
           units = input$plot_units,
-          dpi = 300 
+          dpi = 300
         )
         showNotification(paste("Plot exported successfully as", export_filename, "!"),
                         type = "message")

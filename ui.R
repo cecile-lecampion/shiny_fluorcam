@@ -356,50 +356,40 @@ ui <- dashboardPage(
                 div(id = "collapse1", class = "panel-collapse collapse in",
                     div(class = "panel-body",
 
+                        # NOMBRE DE VARIABLES
+                        # STRATEGY: Let user define how many variables they have
+                        # PURPOSE: Flexible configuration for different experimental designs
+                       numericInput("num_vars", 
+                                    "Number of Variables in Filename:",
+                                    value = 3, 
+                                    min = 2, 
+                                    max = 6, 
+                                    step = 1,
+                                    width = "100%"),
+
+                       br(),
+
                         # NAMING CONVENTION EXPLANATION
-                        # STRATEGY: Prominent alert box with clear examples
-                        # PURPOSE: Prevent user confusion about required file format
-                        div(class = "alert alert-info", style = "margin-bottom: 15px;",
-                            icon("info-circle"),
-                            strong(" Required File Naming Pattern:"),
-                            br(), br(),
-                            tags$code("VAR1_VAR2_VAR3.TXT", style = "font-size: 14px; background-color: #f8f9fa; padding: 15px;"),
-                            br(), br(),
-                            em("Example: Day1_LineA_Plant001.TXT")
-                        ),
+                        # STRATEGY: Dynamic alert box with pattern based on number of variables
+                        # PURPOSE: Show users the exact pattern they need to follow
+                        uiOutput("naming_pattern_info"),
+            
+                        br(),
 
                         # VARIABLE DEFINITION INPUTS
-                        # STRATEGY: Three-column layout for logical organization
+                        # STRATEGY: Dynamic inputs based on number of variables
                         # PURPOSE: Map generic placeholders to actual experiment variables
                         helpText("Define what each variable represents in your file names:"),
-                        fluidRow(
-                          column(4, 
-                                 div(style = "text-align: center;",
-                                     strong("VAR1"),
-                                     textInput("var1", NULL, value = "Day", placeholder = "e.g., Day")
-                                 )
-                          ),
-                          column(4, 
-                                 div(style = "text-align: center;",
-                                     strong("VAR2"),
-                                     textInput("var2", NULL, value = "Line", placeholder = "e.g., Line")
-                                 )
-                          ),
-                          column(4, 
-                                 div(style = "text-align: center;",
-                                     strong("VAR3"),
-                                     textInput("var3", NULL, value = "PlantID", placeholder = "e.g., PlantID")
-                                 )
-                          )
-                        ),
+                        uiOutput("dynamic_var_inputs"),
 
                         # LIVE FILENAME PREVIEW
                         # STRATEGY: Real-time feedback using reactive inputs
                         # PURPOSE: Immediate validation of user setup
                         div(class = "well well-sm", style = "margin-top: 15px; background-color: #f0f8ff;",
                             strong("Expected filename example: "),
-                            tags$span(id = "filename_preview", style = "font-family: monospace; color: #2c3e50;",
-                                     "Day1_LineA_Plant001.TXT")
+                            tags$span(id = "filename_preview", 
+                                      style = "font-family: monospace; color: #2c3e50;",
+                                      textOutput("filename_example", inline = TRUE))
                         )
                     )
                 )
@@ -879,7 +869,8 @@ ui <- dashboardPage(
                      # MAIN VISUALIZATION DISPLAY
                      # STRATEGY: Fixed height container for consistent layout
                      # PURPOSE: Professional plot presentation with responsive sizing
-                     plotOutput("plot_result", height = "600px")
+                     plotOutput("plot_result", height = "600px"),
+                     uiOutput("convert_to_curve_button")
             ),
             
             # ===========================================

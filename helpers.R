@@ -23,12 +23,38 @@
 # INPUT: File pattern, directory path, and variable naming scheme
 # OUTPUT: Combined dataframe ready for statistical analysis
 
-process_data_files <- function(pattern, var1, var2, var3, dirpath) {
+process_data_files <- function(pattern, var_names, dirpath) {
+  
+  # VALIDATION: Check inputs
+  # STRATEGY: Ensure all required parameters are valid
+  # PURPOSE: Prevent errors from invalid parameters
+  if (is.null(pattern) || pattern == "") {
+    stop("Pattern cannot be empty")
+  }
+  
+  if (is.null(var_names) || length(var_names) == 0) {
+    stop("Variable names must be provided")
+  }
+  
+  if (!dir.exists(dirpath)) {
+    stop("Directory does not exist: ", dirpath)
+  }
+  
+  # GET NUMBER OF VARIABLES
+  # STRATEGY: Dynamic variable count from provided names
+  # PURPOSE: Support flexible number of variables
+  num_vars <- length(var_names)
+  
   # FILE DISCOVERY
   # STRATEGY: Use pattern matching to find relevant files
   # PURPOSE: Flexible file selection based on user input
   files <- list.files(path = dirpath, pattern = pattern, full.names = TRUE)
   print(paste("Files found:", files))
+  
+  if (length(files) == 0) {
+    warning("No files found matching pattern: ", pattern)
+    return(NULL)
+  }
   
   # INNER FUNCTION: FILE CLEANING
   # STRATEGY: Nested function for single responsibility
@@ -61,12 +87,33 @@ process_data_files <- function(pattern, var1, var2, var3, dirpath) {
     return(data)
   }
   
-  # INNER FUNCTION: Fv/Fm CALCULATION
-  # STRATEGY: Automatic calculation of key fluorescence parameter
-  # PURPOSE: Fv/Fm is standard measure of photosynthetic efficiency
-  # FORMULA: Fv/Fm = (Fm - F0) / Fm = Fv / Fm
+  # INNER FUNCTION: Fv/Fm CALCULATION (CONDITIONAL WITH FALLBACK)
+  # STRATEGY: Calculate Fv/Fm with multiple methods based on available columns
+  # PURPOSE: Handle different FluorCam export formats gracefully
+  # METHOD 1: Direct Fv/Fm calculation if Fv exists
+  # METHOD 2: Calculate from Fm and Fo if Fv is absent: (Fm - Fo) / Fm
+  # METHOD 3: No calculation if neither method is possible
   compute_Fv_Fm <- function(df) {
-    df$Fv_Fm <- df$Fv / df$Fm
+    # CHECK METHOD 1: Direct Fv/Fm calculation
+    # STRATEGY: Preferred method when Fv is directly measured
+    # PURPOSE: Use most accurate measurement when available
+    if ("Fv" %in% colnames(df) && "Fm" %in% colnames(df)) {
+      df$Fv_Fm <- df$Fv / df$Fm
+      return(df)
+    }
+    
+    # CHECK METHOD 2: Calculate Fv from Fm and Fo
+    # STRATEGY: Fallback calculation using Fv = Fm - Fo
+    # PURPOSE: Handle FluorCam exports that don't include Fv directly
+    # FORMULA: Fv/Fm = (Fm - Fo) / Fm
+    if ("Fm" %in% colnames(df) && "Fo" %in% colnames(df)) {
+      df$Fv_Fm <- (df$Fm - df$Fo) / df$Fm
+      return(df)
+    }
+    
+    # NO CALCULATION POSSIBLE
+    # STRATEGY: Return dataframe unchanged
+    # PURPOSE: Allow analysis to continue without Fv/Fm when not calculable
     return(df)
   }
   
@@ -78,18 +125,29 @@ process_data_files <- function(pattern, var1, var2, var3, dirpath) {
     return(df)
   }
   
-  # INNER FUNCTION: VARIABLE EXTRACTION
-  # STRATEGY: Parse filename into separate variable columns
+  # INNER FUNCTION: VARIABLE EXTRACTION (DYNAMIC)
+  # STRATEGY: Parse filename into separate variable columns based on num_vars
   # PURPOSE: Extract experimental variables from systematic naming
-  # METHOD: Split on underscore separator (VAR1_VAR2_VAR3.TXT)
-  divide_name <- function(df) {
-    df <- tidyr::separate(
-      data = df,
-      col = "Name",
-      into = c(var1, var2, var3),  # User-defined variable names
-      sep = "_",                   # Underscore separator
-      remove = TRUE                # Remove original Name column
-    )
+  # METHOD: Split on underscore separator (VAR1_VAR2_..._VARN.TXT)
+  divide_name <- function(df, var_names) {
+    # Split Name column by underscore
+    name_parts <- strsplit(df$Name, "_")
+    
+    # Check if we have the correct number of parts
+    if (any(sapply(name_parts, length) != length(var_names))) {
+      warning("Some filenames do not match the expected number of variables")
+    }
+    
+    # Create new columns for each variable
+    for (i in seq_along(var_names)) {
+      df[[var_names[i]]] <- sapply(name_parts, function(x) {
+        if (length(x) >= i) x[i] else NA
+      })
+    }
+    
+    # Remove original Name column
+    df$Name <- NULL
+    
     return(df)
   }
   
@@ -100,6 +158,7 @@ process_data_files <- function(pattern, var1, var2, var3, dirpath) {
   # STRATEGY: lapply for efficient list processing
   # PURPOSE: Apply cleaning function to each file
   Liste <- lapply(files, remove_first_two_lines, area = "")
+  
   # CREATE NAMED LIST
   # STRATEGY: Use filenames (without extension) as list names
   # PURPOSE: Maintain file identity through processing
@@ -111,20 +170,9 @@ process_data_files <- function(pattern, var1, var2, var3, dirpath) {
   # METHOD: data.table::transpose with X column as names
   Liste <- lapply(Liste, data.table::transpose, make.names = "X")
 
-  ## Alternative method to data.table use
-  ## REPLACE data.table::transpose with base R approach
-  # STRATEGY: Base R alternative for environments without data.table
-  # PURPOSE: Provide fallback option for different deployment scenarios
-  # Liste <- lapply(Liste, function(df) {
-  #   # Convert to matrix, transpose, then back to data.frame
-  #   df_t <- as.data.frame(t(df[-1]))  # Exclude first column (X), transpose rest
-  #   colnames(df_t) <- df$X  # Use X column as new column names
-  #   return(df_t)
-  # })
-
-  # STEP 3: CALCULATE Fv/Fm
-  # STRATEGY: Apply calculation to all datasets
-  # PURPOSE: Add derived parameter to all files
+  # STEP 3: CALCULATE Fv/Fm (CONDITIONAL)
+  # STRATEGY: Apply calculation only if Fv exists
+  # PURPOSE: Add derived parameter when possible, skip if not
   Liste <- lapply(Liste, compute_Fv_Fm)
   
   # STEP 4: ADD FILENAME IDENTIFIERS
@@ -134,15 +182,21 @@ process_data_files <- function(pattern, var1, var2, var3, dirpath) {
     add_name_column(Liste[[name]], name)
   })
   
-  # STEP 5: EXTRACT VARIABLES FROM FILENAMES
+  # STEP 5: EXTRACT VARIABLES FROM FILENAMES (DYNAMIC)
   # STRATEGY: Parse systematic filenames into experimental variables
   # PURPOSE: Create grouping variables for statistical analysis
-  Liste <- lapply(Liste, divide_name)
+  Liste <- lapply(Liste, divide_name, var_names = var_names)
   
   # STEP 6: COMBINE ALL DATA
   # STRATEGY: Row-bind all processed datasets
   # PURPOSE: Create single analysis-ready dataframe
   df <- do.call(rbind, Liste)
+  
+  # STEP 7: REORDER COLUMNS
+  # STRATEGY: Put variable columns first, then measurements
+  # PURPOSE: Logical column arrangement for analysis
+  measurement_cols <- setdiff(names(df), var_names)
+  df <- df[, c(var_names, measurement_cols)]
 
   return(df)
 }
