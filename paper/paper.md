@@ -40,13 +40,15 @@ Existing solutions lack integration between data processing, statistical analysi
 FluorCam Toolbox addresses this gap by providing a user-friendly platform that democratizes access to sophisticated fluorescence analysis while maintaining statistical rigor and reproducibility.
 The tool serves plant biologists, ecophysiologists, and agricultural researchers using chlorophyll fluorescence for stress assessment, climate research, and crop improvement.
 
+# State of Field
+
+In the field of plant phenotyping with FluorCam systems, data extraction, processing, and visualization workflows remain highly fragmented. Most researchers rely on ad hoc scripts or manual data handling in spreadsheet software such as Microsoft Excel, which is time-consuming and prone to human error. Statistical analyses are often performed within the same tool or exported to external statistical environments (e.g., R or Python), requiring repeated data reformatting and further increasing the risk of inconsistency. Although some laboratories have developed in-house scripts for partial automation, these tools are rarely shared, lack documentation, and are not interoperable across projects. No existing package currently provides an end-to-end integration for FluorCam data, from import to advanced statistical and graphical analyses. Contributing to scattered repositories would not have resulted in a coherent or sustainable solution. Instead, we developed a standalone, open-source Shiny application that unifies data management, visualization, and analysis within a user-friendly web interface. This integrated approach democratizes access to advanced analytical methods and improves reproducibility across research teams using FluorCam systems.
+
 # Software Design
 
 The creation of FluorCam Toolbox stemmed from the need to empower plant biologists with high-quality chlorophyll fluorescence analysis, free from the barriers of complex scripting languages, cryptic error messages, and manual spreadsheet processing that hinder result interpretation. 
 
 Key trade-offs prioritized user-friendliness and robustness over maximal flexibility. A modular architecture employs reactive programming principles, using ReactiveValues for shared mutable storage to enable efficient updates alongside comprehensive validation pipelines that prevent invalid analyses. The accordion layout enforces a logical workflow, from file configuration and data loading to analysis and export, while reducing visual clutter. Conditional UI elements and dynamic dropdowns populated from actual data columns further adapt to diverse FluorCam configurations without overwhelming users.
-
-No existing packages provide this end-to-end integration for FluorCam data. Contributing to fragmented script repositories would not have provided a coherent solution or resolved the usability issues, which justifies the creation of a new standalone Shiny application to democratize advanced analyses.
 
 # Research Impact Statement
 
