@@ -133,16 +133,33 @@ process_data_files <- function(pattern, var_names, dirpath) {
     # Split Name column by underscore
     name_parts <- strsplit(df$Name, "_")
     
+    # FIX: Convertir en matrice pour extraction plus robuste
+    # STRATEGY: Ensure we get atomic vectors, not list columns
+    # PURPOSE: Prevent "$ operator invalid for atomic vectors" error
+    max_parts <- max(sapply(name_parts, length))
+    
     # Check if we have the correct number of parts
     if (any(sapply(name_parts, length) != length(var_names))) {
       warning("Some filenames do not match the expected number of variables")
     }
     
-    # Create new columns for each variable
+    # Create new columns for each variable - FIXED VERSION
     for (i in seq_along(var_names)) {
+      # FIX: Extract as CHARACTER VECTOR (not list)
+      # STRATEGY: Use sapply with explicit character conversion
+      # PURPOSE: Ensure atomic vector type for all columns
       df[[var_names[i]]] <- sapply(name_parts, function(x) {
-        if (length(x) >= i) x[i] else NA
-      })
+        if (length(x) >= i) {
+          as.character(x[i])  # Force to character
+        } else {
+          NA_character_       # Use typed NA
+        }
+      }, USE.NAMES = FALSE)  # Don't create names attribute
+      
+      # ADDITIONAL FIX: Ensure atomic vector
+      # STRATEGY: Force vector type and remove any list structure
+      # PURPOSE: Guarantee compatibility with dplyr operations
+      df[[var_names[i]]] <- as.vector(df[[var_names[i]]])
     }
     
     # Remove original Name column
@@ -411,17 +428,33 @@ analyse_barplot <- function(
     data[[var2]] <- as.factor(data[[var2]])
   }
 
-  # NORMALITY TESTING - BASE R APPROACH
-  # STRATEGY: Use split-apply-combine with base R shapiro.test
-  # PURPOSE: Maximum compatibility and reliability
+  # ===========================================
+  # NORMALITY TESTING - VERSION SIMPLIFIÉE
+  # ===========================================
+  # STRATEGY: Perform Shapiro-Wilk test for each group
+  # PURPOSE: Determine if data meets normality assumptions
+  # ASSUMPTION: Sample sizes are always between 3 and 5000
+  
   shapiro_df <- data %>%
-    group_by(.data[[var2]], .data[[var1]]) %>%
-    group_modify(~ {
-      test_result <- shapiro.test(.x[[measure_col]])
-      tibble(
-        statistic = test_result$statistic,
-        p = test_result$p.value,
-        method = "Shapiro-Wilk"
+    group_by(across(all_of(c(var2, var1)))) %>%
+    do({
+      # Extract values for this group
+      values <- .[[measure_col]]
+      
+      # Perform Shapiro test
+      test_result <- tryCatch(
+        shapiro.test(values),
+        error = function(e) {
+          list(statistic = NA_real_, p.value = NA_real_)
+        }
+      )
+      
+      # Return results as data frame
+      data.frame(
+        statistic = as.numeric(test_result$statistic),
+        p = as.numeric(test_result$p.value),
+        method = "Shapiro-Wilk",
+        stringsAsFactors = FALSE
       )
     }) %>%
     ungroup()
@@ -441,12 +474,13 @@ analyse_barplot <- function(
     # SUMMARY STATISTICS
     # STRATEGY: Use summarise for mean ± standard error
     # PURPOSE: Generate values for bar heights and error bars
+    # FIX: Use .data[[]] instead of get() for column names with underscores
     my_summary <- data %>%
       dplyr::group_by(.data[[var2]], .data[[var1]]) %>%
       dplyr::summarise(
-        N = length(get(measure_col)),
-        mean_value = mean(get(measure_col), na.rm = TRUE),
-        sd_value = sd(get(measure_col), na.rm = TRUE),
+        N = length(.data[[measure_col]]),                    # FIX: Changed from get()
+        mean_value = mean(.data[[measure_col]], na.rm = TRUE),  # FIX: Changed from get()
+        sd_value = sd(.data[[measure_col]], na.rm = TRUE),      # FIX: Changed from get()
         se = sd_value / sqrt(N),
         ci_lower = mean_value - se * qt(0.975, df = N - 1),
         ci_upper = mean_value + se * qt(0.975, df = N - 1),
@@ -460,7 +494,7 @@ analyse_barplot <- function(
     # GENERATE DYNAMIC FORMULA FOR ANOVA
     # STRATEGY: Programmatically construct formula from variable names
     # PURPOSE: Flexible function that works with any column names
-    formule <- as.formula(paste(measure_col, "~", var2))
+    formule <- as.formula(paste0("`", measure_col, "` ~ `", var2, "`"))
 
     # GROUP BY FACET VARIABLE AND APPLY ANOVA
     # STRATEGY: Separate ANOVA for each facet level
@@ -476,7 +510,7 @@ analyse_barplot <- function(
     # GENERATE DYNAMIC FORMULA FOR TUKEY HSD
     # STRATEGY: Same formula construction as ANOVA
     # PURPOSE: Consistent approach across statistical tests
-    formule <- as.formula(paste(measure_col, "~", var2))
+    formule <- as.formula(paste0("`", measure_col, "` ~ `", var2, "`"))
 
     # GROUP BY FACET VARIABLE AND APPLY TUKEY TEST
     # STRATEGY: Separate post-hoc testing for each facet level
@@ -605,15 +639,16 @@ analyse_barplot <- function(
     # MEDIAN WITH CONFIDENCE INTERVALS - REPLACE groupwiseMedian
     # STRATEGY: Use modern dplyr with quantile-based confidence intervals
     # PURPOSE: Non-parametric equivalent of mean ± SE
+    # FIX: Use .data[[]] instead of get() for column names with underscores
     conf_int <- data %>%
       dplyr::group_by(.data[[var2]], .data[[var1]]) %>%
       dplyr::summarise(
-        N = length(get(measure_col)),
-        Median = median(get(measure_col), na.rm = TRUE),
-        Q1 = quantile(get(measure_col), 0.25, na.rm = TRUE),
-        Q3 = quantile(get(measure_col), 0.75, na.rm = TRUE),
-        Percentile.lower = quantile(get(measure_col), 0.025, na.rm = TRUE),  # 2.5th percentile
-        Percentile.upper = quantile(get(measure_col), 0.975, na.rm = TRUE),  # 97.5th percentile
+        N = length(.data[[measure_col]]),                           # FIX: Changed from get()
+        Median = median(.data[[measure_col]], na.rm = TRUE),        # FIX: Changed from get()
+        Q1 = quantile(.data[[measure_col]], 0.25, na.rm = TRUE),    # FIX: Changed from get()
+        Q3 = quantile(.data[[measure_col]], 0.75, na.rm = TRUE),    # FIX: Changed from get()
+        Percentile.lower = quantile(.data[[measure_col]], 0.025, na.rm = TRUE),  # FIX
+        Percentile.upper = quantile(.data[[measure_col]], 0.975, na.rm = TRUE),  # FIX
         .groups = 'drop'
       )
 
@@ -624,7 +659,7 @@ analyse_barplot <- function(
     # GENERATE DYNAMIC FORMULA FOR KRUSKAL-WALLIS
     # STRATEGY: Same formula construction approach as parametric version
     # PURPOSE: Consistent approach across statistical methods
-    formule <- as.formula(paste(measure_col, "~", var2))
+    formule <- as.formula(paste0("`", measure_col, "` ~ `", var2, "`"))
 
     # APPLY KRUSKAL-WALLIS TEST
     # STRATEGY: Group by facet variable for separate tests
@@ -645,20 +680,14 @@ analyse_barplot <- function(
       # PURPOSE: Identify which specific groups differ
       
       # GENERATE DYNAMIC FORMULA FOR DUNN TEST
-      # STRATEGY: Consistent formula approach across all tests
-      # PURPOSE: Maintain code consistency and reliability
-      formule <- as.formula(paste(measure_col, "~", var2))
+      # FIX: Use backticks for column names with special characters
+      formule <- as.formula(paste0("`", measure_col, "` ~ `", var2, "`"))
 
       # APPLY DUNN TEST WITH MULTIPLE COMPARISON CORRECTION
-      # STRATEGY: Benjamini-Hochberg correction for false discovery rate control
-      # PURPOSE: Control type I error rate in multiple comparisons
       pval_dunn <- data %>%
-        group_by(.data[[var1]]) %>%  # Separate tests for each facet
-        rstatix::dunn_test((formule),
-          p.adjust.method = "BH"  # Benjamini-Hochberg correction
-        ) %>%
-        as.data.frame()  # Convert to standard dataframe for compatibility
-
+        group_by(.data[[var1]]) %>%
+        rstatix::dunn_test(formule, p.adjust.method = "BH") %>%
+        as.data.frame()
       # COMPACT LETTER DISPLAY (NON-PARAMETRIC)
       # STRATEGY: Generate letters from Dunn test results
       # PURPOSE: Visual grouping for non-parametric results
