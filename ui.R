@@ -505,27 +505,32 @@ ui <- dashboardPage(
                         # PURPOSE: Automatically populate options from actual data
                         uiOutput("rootSelect"),      # Parameter root selection (curves only)
                         uiOutput("columnSelect"),    # Column/parameter selection
+                        uiOutput("bar_analysis_ui"), # Model/factor selection (bar plot)
+                        uiOutput("bar_design_diagnostic_ui"), # Two-way design diagnostics
                         uiOutput("editParamsBtn"),   # Time parameter configuration (curves only)
                         
-                        # FACETING CONFIGURATION
-                        # STRATEGY: Clear labeling with explanatory text
-                        # PURPOSE: Control how data is split into multiple plot panels
-                        div(
-                          tags$label(
-                            strong("Facet Variable"), 
-                            span(": Choose how to split your data into separate panels", style = "font-weight: normal;"),
-                            style = "margin-bottom: 10px; display: block;"
+                        # FACETING CONFIGURATION (CURVE ONLY)
+                        # STRATEGY: Keep legacy var1/var2 faceting only for curve workflow
+                        # PURPOSE: Avoid confusion with bar plot dedicated factor/facet controls
+                        conditionalPanel(
+                          condition = "input.graph_type == 'Curve'",
+                          div(
+                            tags$label(
+                              strong("Facet Variable"), 
+                              span(": Choose how to split your data into separate panels", style = "font-weight: normal;"),
+                              style = "margin-bottom: 10px; display: block;"
+                            ),
+                            selectInput("facet_var", NULL,
+                                        choices = c("var1", "var2"))
                           ),
-                          selectInput("facet_var", NULL,
-                                      choices = c("var1", "var2"))
+                          
+                          # GROUP ORDERING INTERFACE
+                          # STRATEGY: Drag-and-drop sortable lists
+                          # PURPOSE: Intuitive control over group order in plots
+                          helpText("Drag to reorder:"),
+                          uiOutput("var2_order_ui"),  # X-axis variable order
+                          uiOutput("var1_order_ui")   # Facet variable order
                         ),
-                        
-                        # GROUP ORDERING INTERFACE
-                        # STRATEGY: Drag-and-drop sortable lists
-                        # PURPOSE: Intuitive control over group order in plots
-                        helpText("Drag to reorder:"),
-                        uiOutput("var2_order_ui"),  # X-axis variable order
-                        uiOutput("var1_order_ui"),  # Facet variable order
                         
                         # CONTROL GROUP SELECTION (CONDITIONAL)
                         # STRATEGY: Only display for curve analysis

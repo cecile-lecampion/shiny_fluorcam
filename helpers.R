@@ -49,7 +49,6 @@ process_data_files <- function(pattern, var_names, dirpath) {
   # STRATEGY: Use pattern matching to find relevant files
   # PURPOSE: Flexible file selection based on user input
   files <- list.files(path = dirpath, pattern = pattern, full.names = TRUE)
-  print(paste("Files found:", files))
   
   if (length(files) == 0) {
     warning("No files found matching pattern: ", pattern)
@@ -252,6 +251,33 @@ check_normality <- function(shapiro_df) {
   return(flag_normal)
 }
 
+# EMMEANS POST-HOC HELPER
+#========================================================================================================================================
+# STRATEGY: Run pairwise post-hoc contrasts on fitted linear models
+# PURPOSE: Provide post-hoc comparisons for multi-factor ANOVA workflows
+
+run_emmeans_pairwise <- function(model, target_factor, by_factors = NULL, adjust = "tukey") {
+  if (!requireNamespace("emmeans", quietly = TRUE)) {
+    return(NULL)
+  }
+
+  target_expr <- paste0("`", target_factor, "`")
+  if (!is.null(by_factors) && length(by_factors) > 0) {
+    by_expr <- paste(sprintf("`%s`", by_factors), collapse = ":")
+    spec <- stats::as.formula(paste0("~ ", target_expr, " | ", by_expr))
+    conditioning <- paste(by_factors, collapse = ",")
+  } else {
+    spec <- stats::as.formula(paste0("~ ", target_expr))
+    conditioning <- "none"
+  }
+
+  emm <- emmeans::emmeans(model, specs = spec)
+  pairwise_df <- as.data.frame(emmeans::contrast(emm, method = "pairwise", adjust = adjust))
+  pairwise_df$target_factor <- target_factor
+  pairwise_df$conditioned_on <- conditioning
+  pairwise_df
+}
+
 
 # ===========================================
 # SECTION 3: COMPACT LETTER DISPLAY FUNCTIONS
@@ -266,6 +292,25 @@ check_normality <- function(shapiro_df) {
 # PURPOSE: Convert pairwise comparison p-values into letter groupings
 # INPUT: Tukey test results from rstatix::tukey_hsd()
 # OUTPUT: Dataframe with groups and their significance letters
+
+generate_cld_letters <- function(p_values, group1, group2) {
+  original_groups <- unique(c(as.character(group1), as.character(group2)))
+  safe_groups <- setNames(paste0("group", seq_along(original_groups)), original_groups)
+  reverse_map <- setNames(names(safe_groups), safe_groups)
+
+  comparison_names <- paste(
+    unname(safe_groups[as.character(group1)]),
+    unname(safe_groups[as.character(group2)]),
+    sep = "-"
+  )
+
+  letters_result <- multcompView::multcompLetters(
+    stats::setNames(p_values, comparison_names),
+    Letters = letters
+  )$Letters
+
+  stats::setNames(unname(letters_result), reverse_map[names(letters_result)])
+}
 
 generate_cld_parametric <- function(tukey_df, var1_col, var2_col) {
   # STEP 1: EXTRACT UNIQUE VALUES
@@ -290,10 +335,11 @@ generate_cld_parametric <- function(tukey_df, var1_col, var2_col) {
     # GENERATE LETTERS FOR THIS GROUP
     # STRATEGY: Use multcompView package for standard CLD generation
     # PURPOSE: Convert p-values to letter groupings following statistical conventions
-    letters_result <- multcompView::multcompLetters(
-      setNames(group_data$p.adj, paste(group_data$group1, group_data$group2, sep = "-")),
-      Letters = letters
-    )$Letters
+    letters_result <- generate_cld_letters(
+      p_values = group_data$p.adj,
+      group1 = group_data$group1,
+      group2 = group_data$group2
+    )
 
     # CONVERT TO DATA FRAME FORMAT
     # STRATEGY: Structure results in consistent dataframe format
@@ -322,13 +368,6 @@ generate_cld_parametric <- function(tukey_df, var1_col, var2_col) {
   names(combined_result)[1] <- var1_col
   names(combined_result)[2] <- var2_col
 
-  # DEBUG OUTPUT
-  # STRATEGY: Provide debugging information for troubleshooting
-  # PURPOSE: Help identify issues during development and testing
-  cat("\nFinal result before returning:\n")
-  print(combined_result)
-  cat("Final column names:", paste(colnames(combined_result), collapse=", "), "\n")
-
   return(combined_result)
 }
 
@@ -344,15 +383,16 @@ generate_cld_nonparametric <- function(dunn_df, var1_col, var2_col) {
     # GROUP BY FACET VARIABLE
     # STRATEGY: Process each facet level separately
     # PURPOSE: Generate separate letter displays for each experimental condition
-    dplyr::group_by(.data[[var1_col]]) %>%
+    dplyr::group_by(dplyr::across(all_of(var1_col))) %>%
     dplyr::summarise(
       # MULTCOMP LETTER GENERATION
       # STRATEGY: Same logic as parametric version using multcompView
       # PURPOSE: Consistent letter generation across parametric and non-parametric analyses
-      cld = list(multcompView::multcompLetters(
-        setNames(p.adj, paste(group1, group2, sep = "-")),
-        Letters = letters
-      )$Letters),
+      cld = list(generate_cld_letters(
+        p_values = p.adj,
+        group1 = group1,
+        group2 = group2
+      )),
       .groups = 'drop'  # Remove grouping after summarise
     ) %>%
     # UNNEST AND RESTRUCTURE
@@ -476,7 +516,7 @@ analyse_barplot <- function(
     # PURPOSE: Generate values for bar heights and error bars
     # FIX: Use .data[[]] instead of get() for column names with underscores
     my_summary <- data %>%
-      dplyr::group_by(.data[[var2]], .data[[var1]]) %>%
+      dplyr::group_by(dplyr::across(all_of(c(var2, var1)))) %>%
       dplyr::summarise(
         N = length(.data[[measure_col]]),                    # FIX: Changed from get()
         mean_value = mean(.data[[measure_col]], na.rm = TRUE),  # FIX: Changed from get()
@@ -500,7 +540,7 @@ analyse_barplot <- function(
     # STRATEGY: Separate ANOVA for each facet level
     # PURPOSE: Statistical testing within each experimental condition
     anova_result <- data %>%
-      group_by(.data[[var1]]) %>%
+      group_by(dplyr::across(all_of(var1))) %>%
       rstatix::anova_test(formule)
 
     # TUKEY POST-HOC TESTING - FORMULA APPROACH
@@ -516,7 +556,7 @@ analyse_barplot <- function(
     # STRATEGY: Separate post-hoc testing for each facet level
     # PURPOSE: Pairwise comparisons within each experimental condition
     tukey_results <- data %>%
-      group_by(.data[[var1]]) %>%
+      group_by(dplyr::across(all_of(var1))) %>%
       rstatix::tukey_hsd(formule)
 
     # COMPACT LETTER DISPLAY
@@ -641,7 +681,7 @@ analyse_barplot <- function(
     # PURPOSE: Non-parametric equivalent of mean ± SE
     # FIX: Use .data[[]] instead of get() for column names with underscores
     conf_int <- data %>%
-      dplyr::group_by(.data[[var2]], .data[[var1]]) %>%
+      dplyr::group_by(dplyr::across(all_of(c(var2, var1)))) %>%
       dplyr::summarise(
         N = length(.data[[measure_col]]),                           # FIX: Changed from get()
         Median = median(.data[[measure_col]], na.rm = TRUE),        # FIX: Changed from get()
@@ -665,9 +705,9 @@ analyse_barplot <- function(
     # STRATEGY: Group by facet variable for separate tests
     # PURPOSE: Non-parametric testing within each experimental condition
     kruskal_pval <- data %>%
-      group_by(.data[[var1]]) %>%
+      group_by(dplyr::across(all_of(var1))) %>%
       rstatix::kruskal_test(formule) %>%
-      dplyr::select(.data[[var1]], p)
+      dplyr::select(all_of(var1), p)
 
     # SIGNIFICANCE CHECK
     # STRATEGY: Only proceed with post-hoc if overall test is significant
@@ -685,7 +725,7 @@ analyse_barplot <- function(
 
       # APPLY DUNN TEST WITH MULTIPLE COMPARISON CORRECTION
       pval_dunn <- data %>%
-        group_by(.data[[var1]]) %>%
+        group_by(dplyr::across(all_of(var1))) %>%
         rstatix::dunn_test(formule, p.adjust.method = "BH") %>%
         as.data.frame()
       # COMPACT LETTER DISPLAY (NON-PARAMETRIC)
@@ -786,11 +826,817 @@ analyse_barplot <- function(
       ))
     } else {
       # NO SIGNIFICANT DIFFERENCES CASE
-      # STRATEGY: Return informative message instead of plot
-      # PURPOSE: Avoid misleading post-hoc testing when overall test is non-significant
-      return("Data are not significantly different, the Dunn test was not performed.")
+      # STRATEGY: Return the same structured output without post-hoc results
+      # PURPOSE: Keep downstream server and export code compatible
+      names(conf_int)[names(conf_int) == "Median"] <- measure_col
+
+      if(!is.null(var1_order)) {
+        conf_int[[var1]] <- factor(conf_int[[var1]], levels = var1_order)
+      }
+      if(!is.null(var2_order)) {
+        conf_int[[var2]] <- factor(conf_int[[var2]], levels = var2_order)
+      }
+
+      p <- conf_int %>%
+        ggplot(aes(x = .data[[var2]], y = .data[[measure_col]], fill = .data[[var2]])) +
+        geom_col(color = line_color, width = 0.6, position = position_dodge2(padding = 0.05)) +
+        scale_fill_manual(values = rep(fill_color, length(unique(conf_int[[var2]])))) +
+        scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
+        geom_quasirandom(
+          data = data,
+          aes(x = .data[[var2]], y = .data[[measure_col]]),
+          color = point_color, width = 0.3, alpha = 0.6
+        ) +
+        geom_segment(aes(x = .data[[var2]], xend = .data[[var2]],
+                         y = pmax(0, Percentile.lower), yend = Percentile.upper),
+                     color = "black") +
+        theme_classic() +
+        theme(
+          axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+          axis.line.x = element_line(linewidth = 0.5),
+          axis.line.y = element_line(linewidth = 0.5),
+          panel.background = element_rect(fill = 'transparent', color = NA),
+          plot.background = element_rect(fill = 'transparent', color = NA),
+          axis.text.y = element_text(vjust = 1),
+          text = element_text(size = 18),
+          legend.position = "none",
+          strip.background = element_blank(),
+          strip.placement = "outside",
+          strip.text = element_text(face = "plain", size = 20, color = "black", hjust = 0.5)
+        ) +
+        facet_wrap(as.formula(paste("~", var1)), nrow = 1, scales = "free_y") +
+        labs(x = var1, y = paste0(measure_col, " (median)"))
+
+      return(list(
+        plot = p,
+        summary = conf_int,
+        shapiro = shapiro_df,
+        normality = flag_normal,
+        kruskal = kruskal_pval,
+        dunn = NULL,
+        cld = NULL,
+        message = "Data are not significantly different, the Dunn test was not performed."
+      ))
     }
   }
+}
+
+# Two-way ANOVA bar plot analysis
+#========================================================================================================================================
+# STRATEGY: Fit A*B model with optional facet-wise stratification
+# PURPOSE: Compare response across two experimental factors
+
+analyse_barplot_twoway <- function(
+  data,
+  factor_a,
+  factor_b,
+  measure_col,
+  facet_var = NULL,
+  fill_color = "ivory1",
+  line_color = "darkgrey",
+  point_color = "darkgreen"
+) {
+  required_cols <- c(factor_a, factor_b, measure_col)
+  if (!is.null(facet_var)) {
+    required_cols <- c(required_cols, facet_var)
+  }
+
+  missing_cols <- setdiff(required_cols, colnames(data))
+  if (length(missing_cols) > 0) {
+    stop(paste("Missing columns:", paste(missing_cols, collapse = ", ")))
+  }
+
+  data[[factor_a]] <- as.factor(data[[factor_a]])
+  data[[factor_b]] <- as.factor(data[[factor_b]])
+  if (!is.null(facet_var)) {
+    data[[facet_var]] <- as.factor(data[[facet_var]])
+  }
+
+  shapiro_groups <- c(factor_a, factor_b)
+  if (!is.null(facet_var)) {
+    shapiro_groups <- c(shapiro_groups, facet_var)
+  }
+
+  shapiro_df <- data %>%
+    dplyr::group_by(dplyr::across(all_of(shapiro_groups))) %>%
+    dplyr::summarise(
+      p = tryCatch(stats::shapiro.test(.data[[measure_col]])$p.value, error = function(e) NA_real_),
+      .groups = "drop"
+    )
+
+  flag_normal <- check_normality(shapiro_df)
+
+  summary_groups <- c(factor_a, factor_b)
+  if (!is.null(facet_var)) {
+    summary_groups <- c(summary_groups, facet_var)
+  }
+
+  summary_df <- data %>%
+    dplyr::group_by(dplyr::across(all_of(summary_groups))) %>%
+    dplyr::summarise(
+      N = sum(!is.na(.data[[measure_col]])),
+      mean_value = mean(.data[[measure_col]], na.rm = TRUE),
+      sd_value = stats::sd(.data[[measure_col]], na.rm = TRUE),
+      se = ifelse(N > 0, sd_value / sqrt(N), NA_real_),
+      ci_lower = mean_value - se * stats::qt(0.975, df = pmax(N - 1, 1)),
+      ci_upper = mean_value + se * stats::qt(0.975, df = pmax(N - 1, 1)),
+      .groups = "drop"
+    )
+
+  formula_tw <- stats::as.formula(paste0("`", measure_col, "` ~ `", factor_a, "` * `", factor_b, "`"))
+
+  has_two_levels <- function(df, col, response_col, required_factors) {
+    keep <- !is.na(df[[response_col]])
+    for (fac in required_factors) {
+      keep <- keep & !is.na(df[[fac]])
+    }
+    df_valid <- df[keep, , drop = FALSE]
+    length(unique(df_valid[[col]])) >= 2
+  }
+
+  build_level_issue <- function(facet_value = NULL) {
+    parts <- c()
+    if (!has_two_levels(subset_df, factor_a, measure_col, c(factor_a, factor_b))) {
+      parts <- c(parts, factor_a)
+    }
+    if (!has_two_levels(subset_df, factor_b, measure_col, c(factor_a, factor_b))) {
+      parts <- c(parts, factor_b)
+    }
+
+    if (is.null(facet_value)) {
+      paste0(
+        "Two-way ANOVA requires at least 2 levels for each factor. Insufficient levels for: ",
+        paste(parts, collapse = ", "),
+        "."
+      )
+    } else {
+      paste0(
+        "Facet '", facet_value, "' skipped: insufficient levels for ",
+        paste(parts, collapse = ", "),
+        "."
+      )
+    }
+  }
+
+  warning_messages <- character()
+
+  if (!is.null(facet_var)) {
+    facet_levels <- unique(as.character(data[[facet_var]]))
+    anova_list <- lapply(facet_levels, function(fv) {
+      subset_df <- data[as.character(data[[facet_var]]) == fv, , drop = FALSE]
+
+      if (!has_two_levels(subset_df, factor_a, measure_col, c(factor_a, factor_b)) ||
+          !has_two_levels(subset_df, factor_b, measure_col, c(factor_a, factor_b))) {
+        warning_messages <<- c(warning_messages, build_level_issue(fv))
+        return(NULL)
+      }
+
+      res <- tryCatch(
+        rstatix::anova_test(subset_df, formula_tw),
+        error = function(e) {
+          warning_messages <<- c(
+            warning_messages,
+            paste0("Facet '", fv, "' skipped: ", e$message)
+          )
+          NULL
+        }
+      )
+
+      if (is.null(res)) {
+        return(NULL)
+      }
+
+      res_df <- as.data.frame(rstatix::get_anova_table(res))
+      class(res_df) <- "data.frame"
+      res_df[[facet_var]] <- fv
+      res_df
+    })
+
+    anova_list <- Filter(Negate(is.null), anova_list)
+    if (length(anova_list) == 0) {
+      stop(
+        paste(
+          c(
+            "Two-way ANOVA could not be computed for any stratification level.",
+            warning_messages
+          ),
+          collapse = " "
+        )
+      )
+    }
+
+    anova_result <- dplyr::bind_rows(anova_list)
+    anova_result <- anova_result %>% dplyr::relocate(all_of(facet_var))
+  } else {
+    subset_df <- data
+    if (!has_two_levels(subset_df, factor_a, measure_col, c(factor_a, factor_b)) ||
+        !has_two_levels(subset_df, factor_b, measure_col, c(factor_a, factor_b))) {
+      stop(build_level_issue())
+    }
+    anova_result <- as.data.frame(rstatix::get_anova_table(rstatix::anova_test(data, formula_tw)))
+    class(anova_result) <- "data.frame"
+  }
+
+  posthoc_result <- NULL
+  if (requireNamespace("emmeans", quietly = TRUE)) {
+    if (!is.null(facet_var)) {
+      facet_levels <- unique(as.character(data[[facet_var]]))
+      posthoc_list <- lapply(facet_levels, function(fv) {
+        subset_df <- data[as.character(data[[facet_var]]) == fv, , drop = FALSE]
+
+        if (!has_two_levels(subset_df, factor_a, measure_col, c(factor_a, factor_b)) ||
+            !has_two_levels(subset_df, factor_b, measure_col, c(factor_a, factor_b))) {
+          return(NULL)
+        }
+
+        model_fit <- tryCatch(stats::lm(formula_tw, data = subset_df), error = function(e) NULL)
+        if (is.null(model_fit)) {
+          return(NULL)
+        }
+
+        a_within_b <- tryCatch(
+          run_emmeans_pairwise(model_fit, target_factor = factor_a, by_factors = c(factor_b)),
+          error = function(e) NULL
+        )
+        b_within_a <- tryCatch(
+          run_emmeans_pairwise(model_fit, target_factor = factor_b, by_factors = c(factor_a)),
+          error = function(e) NULL
+        )
+
+        combined <- dplyr::bind_rows(a_within_b, b_within_a)
+        if (nrow(combined) == 0) {
+          return(NULL)
+        }
+
+        combined[[facet_var]] <- fv
+        combined
+      })
+
+      posthoc_list <- Filter(Negate(is.null), posthoc_list)
+      if (length(posthoc_list) > 0) {
+        posthoc_result <- dplyr::bind_rows(posthoc_list) %>% dplyr::relocate(all_of(facet_var))
+      }
+    } else {
+      model_fit <- tryCatch(stats::lm(formula_tw, data = data), error = function(e) NULL)
+      if (!is.null(model_fit)) {
+        a_within_b <- tryCatch(
+          run_emmeans_pairwise(model_fit, target_factor = factor_a, by_factors = c(factor_b)),
+          error = function(e) NULL
+        )
+        b_within_a <- tryCatch(
+          run_emmeans_pairwise(model_fit, target_factor = factor_b, by_factors = c(factor_a)),
+          error = function(e) NULL
+        )
+        posthoc_result <- dplyr::bind_rows(a_within_b, b_within_a)
+      }
+    }
+  } else {
+    warning_messages <- c(
+      warning_messages,
+      "Post-hoc comparisons not run: package 'emmeans' is not installed."
+    )
+  }
+
+  factor_a_levels <- unique(as.character(summary_df[[factor_a]]))
+  fill_palette <- if (length(factor_a_levels) > 1) {
+    setNames(scales::hue_pal()(length(factor_a_levels)), factor_a_levels)
+  } else {
+    setNames(fill_color, factor_a_levels)
+  }
+
+  point_palette <- if (length(factor_a_levels) > 1) {
+    fill_palette
+  } else {
+    setNames(point_color, factor_a_levels)
+  }
+
+  p <- ggplot(
+    summary_df,
+    aes(x = .data[[factor_b]], y = mean_value, fill = .data[[factor_a]])
+  ) +
+    geom_col(
+      position = position_dodge(width = 0.75),
+      width = 0.65,
+      color = line_color
+    ) +
+    geom_errorbar(
+      aes(ymin = ci_lower, ymax = ci_upper),
+      width = 0.2,
+      position = position_dodge(width = 0.75)
+    ) +
+    geom_quasirandom(
+      data = data,
+      aes(
+        x = .data[[factor_b]],
+        y = .data[[measure_col]],
+        color = .data[[factor_a]]
+      ),
+      dodge.width = 0.75,
+      alpha = 0.5,
+      width = 0.2,
+      size = 1.2,
+      show.legend = FALSE
+    ) +
+    scale_fill_manual(values = fill_palette) +
+    scale_color_manual(values = point_palette) +
+    theme_classic() +
+    theme(
+      axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+      text = element_text(size = 18),
+      strip.background = element_blank(),
+      strip.placement = "outside"
+    ) +
+    labs(
+      x = factor_b,
+      y = paste0(measure_col, " (mean)"),
+      fill = factor_a
+    )
+
+  if (!is.null(facet_var)) {
+    p <- p + facet_wrap(as.formula(paste("~", facet_var)), nrow = 1, scales = "free_y")
+  }
+
+  return(list(
+    plot = p,
+    summary = summary_df,
+    shapiro = shapiro_df,
+    normality = flag_normal,
+    anova2 = anova_result,
+    posthoc = posthoc_result,
+    model = "twoway_anova",
+    message = if (length(warning_messages) > 0) paste(unique(warning_messages), collapse = " ") else NULL
+  ))
+}
+
+# Three-way ANOVA bar plot analysis
+#========================================================================================================================================
+# STRATEGY: Fit A*B*C model in one analysis
+# PURPOSE: Compare response across three experimental factors
+
+analyse_barplot_threeway <- function(
+  data,
+  factor_a,
+  factor_b,
+  factor_c,
+  measure_col,
+  fill_color = "ivory1",
+  line_color = "darkgrey",
+  point_color = "darkgreen"
+) {
+  required_cols <- c(factor_a, factor_b, factor_c, measure_col)
+  missing_cols <- setdiff(required_cols, colnames(data))
+  if (length(missing_cols) > 0) {
+    stop(paste("Missing columns:", paste(missing_cols, collapse = ", ")))
+  }
+
+  data[[factor_a]] <- as.factor(data[[factor_a]])
+  data[[factor_b]] <- as.factor(data[[factor_b]])
+  data[[factor_c]] <- as.factor(data[[factor_c]])
+
+  has_two_levels <- function(df, col, response_col, required_factors) {
+    keep <- !is.na(df[[response_col]])
+    for (fac in required_factors) {
+      keep <- keep & !is.na(df[[fac]])
+    }
+    df_valid <- df[keep, , drop = FALSE]
+    length(unique(df_valid[[col]])) >= 2
+  }
+
+  if (!has_two_levels(data, factor_a, measure_col, c(factor_a, factor_b, factor_c)) ||
+      !has_two_levels(data, factor_b, measure_col, c(factor_a, factor_b, factor_c)) ||
+      !has_two_levels(data, factor_c, measure_col, c(factor_a, factor_b, factor_c))) {
+    missing_level_factors <- c()
+    if (!has_two_levels(data, factor_a, measure_col, c(factor_a, factor_b, factor_c))) {
+      missing_level_factors <- c(missing_level_factors, factor_a)
+    }
+    if (!has_two_levels(data, factor_b, measure_col, c(factor_a, factor_b, factor_c))) {
+      missing_level_factors <- c(missing_level_factors, factor_b)
+    }
+    if (!has_two_levels(data, factor_c, measure_col, c(factor_a, factor_b, factor_c))) {
+      missing_level_factors <- c(missing_level_factors, factor_c)
+    }
+
+    stop(
+      paste0(
+        "Three-way ANOVA requires at least 2 levels for each factor. Insufficient levels for: ",
+        paste(missing_level_factors, collapse = ", "),
+        "."
+      )
+    )
+  }
+
+  shapiro_df <- data %>%
+    dplyr::group_by(dplyr::across(all_of(c(factor_a, factor_b, factor_c)))) %>%
+    dplyr::summarise(
+      p = tryCatch(stats::shapiro.test(.data[[measure_col]])$p.value, error = function(e) NA_real_),
+      .groups = "drop"
+    )
+
+  flag_normal <- check_normality(shapiro_df)
+
+  summary_df <- data %>%
+    dplyr::group_by(dplyr::across(all_of(c(factor_a, factor_b, factor_c)))) %>%
+    dplyr::summarise(
+      N = sum(!is.na(.data[[measure_col]])),
+      mean_value = mean(.data[[measure_col]], na.rm = TRUE),
+      sd_value = stats::sd(.data[[measure_col]], na.rm = TRUE),
+      se = ifelse(N > 0, sd_value / sqrt(N), NA_real_),
+      ci_lower = mean_value - se * stats::qt(0.975, df = pmax(N - 1, 1)),
+      ci_upper = mean_value + se * stats::qt(0.975, df = pmax(N - 1, 1)),
+      .groups = "drop"
+    )
+
+  formula_th <- stats::as.formula(
+    paste0("`", measure_col, "` ~ `", factor_a, "` * `", factor_b, "` * `", factor_c, "`")
+  )
+  anova_result <- as.data.frame(rstatix::get_anova_table(rstatix::anova_test(data, formula_th)))
+  class(anova_result) <- "data.frame"
+
+  warning_messages <- character()
+  posthoc_result <- NULL
+  if (requireNamespace("emmeans", quietly = TRUE)) {
+    model_fit <- tryCatch(stats::lm(formula_th, data = data), error = function(e) NULL)
+
+    if (!is.null(model_fit)) {
+      a_within_bc <- tryCatch(
+        run_emmeans_pairwise(model_fit, target_factor = factor_a, by_factors = c(factor_b, factor_c)),
+        error = function(e) NULL
+      )
+      b_within_ac <- tryCatch(
+        run_emmeans_pairwise(model_fit, target_factor = factor_b, by_factors = c(factor_a, factor_c)),
+        error = function(e) NULL
+      )
+      c_within_ab <- tryCatch(
+        run_emmeans_pairwise(model_fit, target_factor = factor_c, by_factors = c(factor_a, factor_b)),
+        error = function(e) NULL
+      )
+
+      posthoc_result <- dplyr::bind_rows(a_within_bc, b_within_ac, c_within_ab)
+    }
+  } else {
+    warning_messages <- c(
+      warning_messages,
+      "Post-hoc comparisons not run: package 'emmeans' is not installed."
+    )
+  }
+
+  factor_a_levels <- unique(as.character(summary_df[[factor_a]]))
+  fill_palette <- if (length(factor_a_levels) > 1) {
+    setNames(scales::hue_pal()(length(factor_a_levels)), factor_a_levels)
+  } else {
+    setNames(fill_color, factor_a_levels)
+  }
+
+  point_palette <- if (length(factor_a_levels) > 1) {
+    fill_palette
+  } else {
+    setNames(point_color, factor_a_levels)
+  }
+
+  p <- ggplot(
+    summary_df,
+    aes(x = .data[[factor_b]], y = mean_value, fill = .data[[factor_a]])
+  ) +
+    geom_col(
+      position = position_dodge(width = 0.75),
+      width = 0.65,
+      color = line_color
+    ) +
+    geom_errorbar(
+      aes(ymin = ci_lower, ymax = ci_upper),
+      width = 0.2,
+      position = position_dodge(width = 0.75)
+    ) +
+    geom_quasirandom(
+      data = data,
+      aes(
+        x = .data[[factor_b]],
+        y = .data[[measure_col]],
+        color = .data[[factor_a]]
+      ),
+      dodge.width = 0.75,
+      alpha = 0.5,
+      width = 0.2,
+      size = 1.2,
+      show.legend = FALSE
+    ) +
+    scale_fill_manual(values = fill_palette) +
+    scale_color_manual(values = point_palette) +
+    theme_classic() +
+    theme(
+      axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+      text = element_text(size = 18),
+      strip.background = element_blank(),
+      strip.placement = "outside"
+    ) +
+    facet_wrap(as.formula(paste("~", factor_c)), nrow = 1, scales = "free_y") +
+    labs(
+      x = factor_b,
+      y = paste0(measure_col, " (mean)"),
+      fill = factor_a
+    )
+
+  return(list(
+    plot = p,
+    summary = summary_df,
+    shapiro = shapiro_df,
+    normality = flag_normal,
+    anova3 = anova_result,
+    posthoc = posthoc_result,
+    model = "threeway_anova",
+    message = if (length(warning_messages) > 0) paste(unique(warning_messages), collapse = " ") else NULL
+  ))
+}
+
+# MANOVA analysis helper
+#========================================================================================================================================
+# STRATEGY: Multivariate response model with optional second factor and stratification
+# PURPOSE: Test joint response of several parameters in one model
+
+analyse_manova <- function(
+  data,
+  response_cols,
+  factor_a,
+  factor_b = NULL,
+  facet_var = NULL
+) {
+  if (length(response_cols) < 2) {
+    stop("MANOVA requires at least two response variables")
+  }
+
+  required_cols <- c(response_cols, factor_a)
+  if (!is.null(factor_b) && factor_b != "") {
+    required_cols <- c(required_cols, factor_b)
+  }
+  if (!is.null(facet_var) && facet_var != "") {
+    required_cols <- c(required_cols, facet_var)
+  }
+
+  missing_cols <- setdiff(required_cols, colnames(data))
+  if (length(missing_cols) > 0) {
+    stop(paste("Missing columns:", paste(missing_cols, collapse = ", ")))
+  }
+
+  for (col in response_cols) {
+    data[[col]] <- suppressWarnings(as.numeric(data[[col]]))
+  }
+
+  data[[factor_a]] <- as.factor(data[[factor_a]])
+  if (!is.null(factor_b) && factor_b != "") {
+    data[[factor_b]] <- as.factor(data[[factor_b]])
+  }
+  if (!is.null(facet_var) && facet_var != "") {
+    data[[facet_var]] <- as.factor(data[[facet_var]])
+  }
+
+  response_term <- paste(sprintf("`%s`", response_cols), collapse = ", ")
+  rhs_term <- if (!is.null(factor_b) && factor_b != "") {
+    paste0("`", factor_a, "` * `", factor_b, "`")
+  } else {
+    paste0("`", factor_a, "`")
+  }
+  formula_mv <- stats::as.formula(paste0("cbind(", response_term, ") ~ ", rhs_term))
+
+  run_manova <- function(df_sub, facet_value = NULL) {
+    fit <- stats::manova(formula_mv, data = df_sub)
+    sm <- summary(fit, test = "Pillai")
+    sm_df <- as.data.frame(sm$stats)
+    sm_df$Effect <- rownames(sm_df)
+    rownames(sm_df) <- NULL
+    if (!is.null(facet_value)) {
+      sm_df[[facet_var]] <- facet_value
+      sm_df <- sm_df %>% dplyr::relocate(all_of(facet_var))
+    }
+    sm_df
+  }
+
+  if (!is.null(facet_var) && facet_var != "") {
+    facet_levels <- unique(as.character(data[[facet_var]]))
+    manova_table <- dplyr::bind_rows(lapply(facet_levels, function(fv) {
+      run_manova(data[as.character(data[[facet_var]]) == fv, , drop = FALSE], facet_value = fv)
+    }))
+  } else {
+    manova_table <- run_manova(data)
+  }
+
+  primary_response <- response_cols[1]
+  p <- ggplot(
+    data,
+    aes(
+      x = .data[[factor_a]],
+      y = .data[[primary_response]],
+      fill = if (!is.null(factor_b) && factor_b != "") .data[[factor_b]] else .data[[factor_a]]
+    )
+  ) +
+    geom_boxplot(outlier.shape = NA, alpha = 0.7) +
+    geom_quasirandom(alpha = 0.5, width = 0.2, size = 1.2) +
+    theme_classic() +
+    theme(
+      axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+      text = element_text(size = 18),
+      strip.background = element_blank(),
+      strip.placement = "outside"
+    ) +
+    labs(
+      x = factor_a,
+      y = paste0(primary_response, " (display variable)"),
+      fill = if (!is.null(factor_b) && factor_b != "") factor_b else factor_a
+    )
+
+  if (!is.null(facet_var) && facet_var != "") {
+    p <- p + facet_wrap(as.formula(paste("~", facet_var)), nrow = 1, scales = "free_y")
+  }
+
+  return(list(
+    plot = p,
+    manova = manova_table,
+    responses = response_cols,
+    normality = NA,
+    shapiro = NULL,
+    model = "manova"
+  ))
+}
+
+# Convert bar plot data to a smoothed curve-style plot
+#========================================================================================================================================
+# STRATEGY: Build a smooth line+ribbon view from grouped bar plot data
+# PURPOSE: Match the visual language of curve analysis when toggling from bar plots
+# INPUT: Raw wide data plus the x/facet/value columns selected in the bar plot UI
+# OUTPUT: List with plot object and intermediate summary/smoothed data
+
+build_converted_curve_plot <- function(data, x_col, facet_col, value_col, x_order = NULL, colors = NULL) {
+  required_cols <- c(x_col, facet_col, value_col)
+  missing_cols <- setdiff(required_cols, colnames(data))
+  if (length(missing_cols) > 0) {
+    stop(paste("Missing columns:", paste(missing_cols, collapse = ", ")))
+  }
+
+  plot_data <- data[, required_cols]
+  x_values <- plot_data[[x_col]]
+  x_numeric <- suppressWarnings(as.numeric(as.character(x_values)))
+
+  if (all(is.na(x_numeric))) {
+    if (is.null(x_order) || length(x_order) == 0) {
+      x_order <- unique(as.character(x_values))
+    }
+    x_numeric <- as.numeric(factor(x_values, levels = x_order))
+    x_labels <- x_order
+    use_labels <- TRUE
+  } else {
+    x_labels <- NULL
+    use_labels <- FALSE
+  }
+
+  plot_data$x_numeric <- x_numeric
+
+  mean_data <- aggregate(
+    plot_data[[value_col]],
+    by = list(facet = plot_data[[facet_col]], x = plot_data$x_numeric),
+    FUN = mean,
+    na.rm = TRUE
+  )
+  names(mean_data)[3] <- "mean_value"
+
+  se_calc <- function(x) {
+    valid_n <- sum(!is.na(x))
+    if (valid_n <= 1) {
+      return(0)
+    }
+    stats::sd(x, na.rm = TRUE) / sqrt(valid_n)
+  }
+
+  se_data <- aggregate(
+    plot_data[[value_col]],
+    by = list(facet = plot_data[[facet_col]], x = plot_data$x_numeric),
+    FUN = se_calc
+  )
+  names(se_data)[3] <- "se_value"
+
+  summary_data <- merge(mean_data, se_data, by = c("facet", "x"), all = TRUE)
+  summary_data <- summary_data[order(summary_data$facet, summary_data$x), ]
+  summary_data$se_value[is.na(summary_data$se_value)] <- 0
+
+  smooth_single_group <- function(group_df) {
+    group_df <- group_df[order(group_df$x), ]
+    facet_value <- as.character(group_df$facet[1])
+
+    raw_group <- plot_data[as.character(plot_data[[facet_col]]) == facet_value, c("x_numeric", value_col)]
+    names(raw_group) <- c("x", "y")
+    raw_group <- raw_group[stats::complete.cases(raw_group), , drop = FALSE]
+
+    unique_x <- sort(unique(raw_group$x))
+
+    if (length(unique_x) == 1) {
+      return(data.frame(
+        facet = facet_value,
+        x = unique_x,
+        fit = group_df$mean_value[1],
+        lwr = pmax(0, group_df$mean_value[1] - group_df$se_value[1]),
+        upr = group_df$mean_value[1] + group_df$se_value[1],
+        stringsAsFactors = FALSE
+      ))
+    }
+
+    x_grid <- seq(min(unique_x), max(unique_x), length.out = max(100, length(unique_x) * 25))
+
+    fit_values <- NULL
+    se_values <- NULL
+
+    if (length(unique_x) >= 3 && nrow(raw_group) >= 5) {
+      k_eff <- min(5, length(unique_x) - 1)
+      if (k_eff >= 3) {
+        qgam_result <- tryCatch({
+          model <- qgam::qgam(y ~ s(x, k = k_eff), data = raw_group, qu = 0.5)
+          preds <- stats::predict(model, newdata = data.frame(x = x_grid), se.fit = TRUE)
+          list(fit = as.numeric(preds$fit), se = pmax(0, as.numeric(preds$se.fit)))
+        }, error = function(e) {
+          NULL
+        })
+
+        if (!is.null(qgam_result)) {
+          fit_values <- qgam_result$fit
+          se_values <- qgam_result$se
+        }
+      }
+    }
+
+    if (is.null(fit_values) || is.null(se_values)) {
+      if (length(unique(group_df$x)) >= 4) {
+        fit_model <- stats::smooth.spline(group_df$x, group_df$mean_value, spar = 0.6)
+        se_model <- stats::smooth.spline(group_df$x, group_df$se_value, spar = 0.6)
+        fit_values <- stats::predict(fit_model, x = x_grid)$y
+        se_values <- pmax(0, stats::predict(se_model, x = x_grid)$y)
+      } else {
+        fit_values <- stats::spline(group_df$x, group_df$mean_value, xout = x_grid, method = "natural")$y
+        se_values <- pmax(0, stats::spline(group_df$x, group_df$se_value, xout = x_grid, method = "natural")$y)
+      }
+    }
+
+    data.frame(
+      facet = facet_value,
+      x = x_grid,
+      fit = fit_values,
+      lwr = pmax(0, fit_values - se_values),
+      upr = fit_values + se_values,
+      stringsAsFactors = FALSE
+    )
+  }
+
+  smoothed_data <- do.call(
+    rbind,
+    lapply(split(summary_data, summary_data$facet), smooth_single_group)
+  )
+
+  facet_levels <- unique(summary_data$facet)
+  if (is.null(colors) || length(colors) < length(facet_levels)) {
+    colors <- scales::hue_pal()(length(facet_levels))
+  }
+  color_mapping <- setNames(colors[seq_along(facet_levels)], facet_levels)
+
+  converted_plot <- ggplot() +
+    geom_ribbon(
+      data = smoothed_data,
+      aes(x = x, ymin = lwr, ymax = upr, fill = facet, group = facet),
+      alpha = 0.3,
+      linetype = 0
+    ) +
+    geom_line(
+      data = smoothed_data,
+      aes(x = x, y = fit, color = facet, group = facet),
+      linewidth = 1
+    ) +
+    geom_point(
+      data = summary_data,
+      aes(x = x, y = mean_value, color = facet, group = facet),
+      size = 1.5,
+      alpha = 0.7
+    ) +
+    scale_fill_manual(values = color_mapping) +
+    scale_colour_manual(values = color_mapping) +
+    theme_classic() +
+    theme(
+      legend.title = element_blank(),
+      axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+      text = element_text(size = 18)
+    ) +
+    labs(
+      x = x_col,
+      y = value_col,
+      color = facet_col,
+      fill = facet_col,
+      title = paste("Curve representation of", value_col)
+    )
+
+  if (use_labels) {
+    converted_plot <- converted_plot +
+      scale_x_continuous(breaks = seq_along(x_labels), labels = x_labels)
+  }
+
+  return(list(
+    plot = converted_plot,
+    summary_data = summary_data,
+    smoothed_data = smoothed_data
+  ))
 }
 
 # Plot curve qGAM version
@@ -829,20 +1675,17 @@ analyse_curve <- function(df, col_vector,
   x_axis_label <- if (!is.null(user_params$unit)) {
     user_params$unit
   } else {
-    ""  # Fallback if no unit specified
+    ""
   }
 
   # Y-AXIS LABEL FROM PARAMETER NAME
   # STRATEGY: Extract root parameter name from selected columns
   # PURPOSE: Clean parameter name without time point suffixes
   y_axis_label <- if (!is.null(user_params$selected_params) && length(user_params$selected_params) > 0) {
-    # PARAMETER NAME EXTRACTION
-    # STRATEGY: Remove time point suffixes (_L1, _L2, etc.) from parameter names
-    # PURPOSE: Get clean parameter name (e.g., "Fq" from "Fq_L1", "Fq_L2")
     param_name <- gsub("_.*", "", user_params$selected_params[1])
     param_name
   } else {
-    parameter_col  # Fallback to column name
+    parameter_col
   }
   
   # ===========================================
@@ -852,35 +1695,23 @@ analyse_curve <- function(df, col_vector,
   # PURPOSE: Ensure data quality before expensive modeling
 
   validate_and_prepare_data <- function(df, parameter_col, time_col, grouping_col, facet_col) {
-    # COLUMN EXISTENCE CHECK
-    # STRATEGY: Verify all required columns are present
-    # PURPOSE: Prevent cryptic errors during analysis
     required_cols <- c(parameter_col, time_col, grouping_col, facet_col)
     missing_cols <- setdiff(required_cols, colnames(df))
     if (length(missing_cols) > 0) {
       stop(paste("Missing columns:", paste(missing_cols, collapse = ", ")))
     }
     
-    # DATA TYPE CONVERSION
-    # STRATEGY: Ensure appropriate data types for modeling
-    # PURPOSE: Prevent type-related errors in qGAM fitting
     df[[grouping_col]] <- as.factor(df[[grouping_col]])
     df[[facet_col]] <- as.factor(df[[facet_col]])
     df[[time_col]] <- suppressWarnings(as.numeric(as.character(df[[time_col]])))
     df[[parameter_col]] <- suppressWarnings(as.numeric(df[[parameter_col]]))
     
-    # MISSING VALUE REMOVAL
-    # STRATEGY: Complete case analysis
-    # PURPOSE: qGAM requires complete data for fitting
     df <- df %>% 
       filter(!is.na(.data[[grouping_col]]) & 
                !is.na(.data[[facet_col]]) &
                !is.na(.data[[time_col]]) & 
                !is.na(.data[[parameter_col]]))
     
-    # FINAL DATA CHECK
-    # STRATEGY: Ensure data remains after cleaning
-    # PURPOSE: Prevent analysis with empty datasets
     if (nrow(df) == 0) {
       stop("No valid data remaining after cleaning")
     }
@@ -895,52 +1726,34 @@ analyse_curve <- function(df, col_vector,
   # PURPOSE: Generate smooth trend lines with confidence intervals
 
   fit_qgam_models <- function(df, grouping_col, facet_col, time_col, parameter_col, k) {
-    # TIME GRID CREATION
-    # STRATEGY: High-resolution time grid for smooth predictions
-    # PURPOSE: Create smooth curves regardless of original time point density
     time_range <- range(df[[time_col]], na.rm = TRUE)
-    time_grid <- seq(time_range[1], time_range[2], length.out = 200)  # 200 points for smoothness
+    time_grid <- seq(time_range[1], time_range[2], length.out = 200)
     
-    # GROUP-WISE MODEL FITTING
-    # STRATEGY: Separate qGAM model for each group × facet combination
-    # PURPOSE: Allow different curve shapes for different conditions
     qgam_preds <- df %>%
-      group_by(.data[[facet_col]], .data[[grouping_col]]) %>%
+      group_by(dplyr::across(all_of(c(facet_col, grouping_col)))) %>%
       group_modify(~{
         tryCatch({
-          # qGAM MODEL FITTING
-          # STRATEGY: Quantile regression at median (qu = 0.5)
-          # PURPOSE: Robust to outliers and non-normal distributions
           mod <- qgam::qgam(
             as.formula(paste(parameter_col, "~ s(", time_col, ", k=", k, ")")),
             data = .x,
-            qu = 0.5  # Median regression - robust central tendency
+            qu = 0.5
           )
           
-          # PREDICTION DATA PREPARATION
-          # STRATEGY: Create new data frame for prediction
-          # PURPOSE: Generate predictions on fine time grid
           newdat <- data.frame(setNames(list(time_grid), time_col))
           newdat[[grouping_col]] <- unique(.x[[grouping_col]])[1]
           newdat[[facet_col]] <- unique(.x[[facet_col]])[1]
           
-          # PREDICTION WITH CONFIDENCE INTERVALS
-          # STRATEGY: Standard error-based confidence intervals
-          # PURPOSE: Show uncertainty in fitted curves
           preds <- predict(mod, newdata = newdat, se.fit = TRUE)
           newdat$fit <- preds$fit
-          newdat$lwr <- preds$fit - 1.96 * preds$se.fit  # 95% CI lower bound
-          newdat$upr <- preds$fit + 1.96 * preds$se.fit  # 95% CI upper bound
+          newdat$lwr <- preds$fit - 1.96 * preds$se.fit
+          newdat$upr <- preds$fit + 1.96 * preds$se.fit
           
           return(newdat)
         }, error = function(e) {
-          # GRACEFUL ERROR HANDLING
-          # STRATEGY: Warning instead of stopping entire analysis
-          # PURPOSE: Allow partial results when some groups fail
           warning(paste("Failed to fit qGAM model for",
                         unique(.x[[facet_col]])[1], "-", unique(.x[[grouping_col]])[1], 
                         ":", e$message))
-          return(data.frame())  # Return empty data frame
+          return(data.frame())
         })
       }) %>%
       ungroup()
@@ -1101,9 +1914,12 @@ analyse_curve <- function(df, col_vector,
       # PURPOSE: Visual indication of model uncertainty
       geom_ribbon(
         data = qgam_preds,
-        aes_string(x = time_col,
-                  ymin = "lwr",
-                  ymax = "upr", fill = grouping_col),
+        aes(
+          x = .data[[time_col]],
+          ymin = .data[["lwr"]],
+          ymax = .data[["upr"]],
+          fill = .data[[grouping_col]]
+        ),
         alpha = 0.3,      # Semi-transparent for overlay effect
         linetype = 0      # No border lines on ribbon
       ) +
@@ -1113,8 +1929,12 @@ analyse_curve <- function(df, col_vector,
       # PURPOSE: Show fitted curves for each group
       geom_line(
         data = qgam_preds,
-        aes_string(x = time_col, y = "fit", color = grouping_col),
-        size = 1
+        aes(
+          x = .data[[time_col]],
+          y = .data[["fit"]],
+          color = .data[[grouping_col]]
+        ),
+        linewidth = 1
       ) +
 
       # MEDIAN POINTS OVERLAY
@@ -1122,8 +1942,11 @@ analyse_curve <- function(df, col_vector,
       # PURPOSE: Connection between model and observed data
       geom_point(
         data = median_points,
-        aes_string(x = time_col,
-                  y = "median_value", color = grouping_col),
+        aes(
+          x = .data[[time_col]],
+          y = .data[["median_value"]],
+          color = .data[[grouping_col]]
+        ),
         size = 1.5, alpha = 0.7
       ) +
 

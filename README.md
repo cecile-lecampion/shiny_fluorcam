@@ -24,7 +24,7 @@ Key features include:
 - shiny, shinydashboard (UI framework)
 - ggplot2, ggpubr (visualizations)  
 - mgcv (GAM modeling)
-- multcomp, PMCMRplus (statistical testing)
+- multcomp, PMCMRplus, emmeans (statistical testing and post-hoc)
 - DT, readr (data handling)
 
 All dependencies are automatically managed through the `global.R` configuration file in the application directory.

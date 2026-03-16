@@ -681,6 +681,213 @@ server <- function(input, output, session) {
     roots <- unique(sub(pattern, "", all_cols[grepl(pattern, all_cols)]))
     selectInput("root", "Select the parameter root", choices = roots)
   })
+
+  # ANALYSIS VARIABLE CANDIDATES (FROM FILENAME VARIABLES)
+  # STRATEGY: Use user-defined naming variables as experimental factors
+  # PURPOSE: Allow >3 variables and explicit factor role assignment
+  analysis_var_choices <- reactive({
+    req(result_df$data)
+    req(input$num_vars)
+
+    vars <- sapply(seq_len(input$num_vars), function(i) {
+      input[[paste0("var", i)]]
+    })
+    vars <- vars[!is.null(vars) & vars != ""]
+    vars <- vars[vars %in% colnames(result_df$data)]
+
+    if (length(vars) == 0) {
+      vars <- colnames(result_df$data)[seq_len(min(2, ncol(result_df$data)))]
+    }
+
+    unique(vars)
+  })
+
+  # BAR PLOT ANALYSIS CONFIGURATION UI
+  # STRATEGY: Dynamic controls based on selected statistical model
+  # PURPOSE: Enable one-way, two-way and three-way ANOVA workflows
+  output$bar_analysis_ui <- renderUI({
+    req(result_df$data)
+    req(input$graph_type == "Bar plot")
+
+    var_choices <- analysis_var_choices()
+    req(length(var_choices) >= 1)
+
+    selected_a <- if (!is.null(input$bar_factor_a) && input$bar_factor_a %in% var_choices) {
+      input$bar_factor_a
+    } else {
+      var_choices[1]
+    }
+
+    remaining_choices <- setdiff(var_choices, selected_a)
+    selected_b <- if (!is.null(input$bar_factor_b) && input$bar_factor_b %in% remaining_choices) {
+      input$bar_factor_b
+    } else if (length(remaining_choices) > 0) {
+      remaining_choices[1]
+    } else {
+      selected_a
+    }
+
+    remaining_after_b <- setdiff(remaining_choices, selected_b)
+    selected_c <- if (!is.null(input$bar_factor_c) && input$bar_factor_c %in% remaining_after_b) {
+      input$bar_factor_c
+    } else if (length(remaining_after_b) > 0) {
+      remaining_after_b[1]
+    } else if (length(remaining_choices) > 0) {
+      remaining_choices[1]
+    } else {
+      selected_a
+    }
+
+    tagList(
+      selectInput(
+        "stat_model",
+        "Statistical model",
+        choices = c(
+          "One-way ANOVA (default)" = "oneway_anova",
+          "Two-way ANOVA" = "twoway_anova",
+          "Three-way ANOVA" = "threeway_anova"
+        ),
+        selected = "oneway_anova"
+      ),
+      selectInput(
+        "bar_factor_a",
+        "Primary factor (A)",
+        choices = var_choices,
+        selected = selected_a
+      ),
+      conditionalPanel(
+        condition = "input.stat_model == 'twoway_anova' || input.stat_model == 'threeway_anova'",
+        selectInput(
+          "bar_factor_b",
+          "Secondary factor (B)",
+          choices = if (length(remaining_choices) > 0) remaining_choices else var_choices,
+          selected = selected_b
+        )
+      ),
+      conditionalPanel(
+        condition = "input.stat_model == 'threeway_anova'",
+        selectInput(
+          "bar_factor_c",
+          "Third factor (C)",
+          choices = if (length(remaining_after_b) > 0) remaining_after_b else var_choices,
+          selected = selected_c
+        )
+      ),
+      conditionalPanel(
+        condition = "input.stat_model == 'oneway_anova' || input.stat_model == 'twoway_anova'",
+        selectInput(
+          "bar_facet_var",
+          "Stratification / Facet variable (optional)",
+          choices = c("None", var_choices),
+          selected = "None"
+        )
+      )
+    )
+  })
+
+  # TWO-WAY DESIGN DIAGNOSTIC UI (BAR PLOT)
+  # STRATEGY: Show analyzable combinations before running ANOVA
+  # PURPOSE: Help users identify facets with insufficient levels
+  output$bar_design_diagnostic_ui <- renderUI({
+    req(result_df$data)
+    req(input$graph_type == "Bar plot")
+
+    if (!identical(input$stat_model, "twoway_anova")) {
+      return(NULL)
+    }
+
+    tagList(
+      div(
+        class = "alert alert-info",
+        style = "margin-top: 10px; margin-bottom: 10px;",
+        strong("Two-way design check"),
+        tags$br(),
+        "Counts are computed on complete rows (response, factor A and factor B all non-missing).",
+        tags$br(),
+        "Status is OK only when each facet has at least 2 levels in A and 2 levels in B."
+      ),
+      tableOutput("bar_design_diagnostic")
+    )
+  })
+
+  bar_design_diagnostic_data <- reactive({
+    req(result_df$data)
+    req(input$graph_type == "Bar plot")
+    req(identical(input$stat_model, "twoway_anova"))
+    req(input$bar_factor_a)
+    req(input$bar_factor_b)
+    req(length(VALUE()) >= 1)
+
+    measure_col <- VALUE()[1]
+    factor_a <- input$bar_factor_a
+    factor_b <- input$bar_factor_b
+    facet_col <- if (!is.null(input$bar_facet_var) && input$bar_facet_var != "None") input$bar_facet_var else NULL
+
+    req(all(c(factor_a, factor_b, measure_col) %in% names(result_df$data)))
+    if (!is.null(facet_col)) {
+      req(facet_col %in% names(result_df$data))
+    }
+
+    diagnostic_df <- data.frame(
+      facet = if (is.null(facet_col)) "All data" else as.character(result_df$data[[facet_col]]),
+      factor_a = as.character(result_df$data[[factor_a]]),
+      factor_b = as.character(result_df$data[[factor_b]]),
+      response = suppressWarnings(as.numeric(result_df$data[[measure_col]])),
+      stringsAsFactors = FALSE
+    )
+
+    diagnostic_df <- diagnostic_df[
+      !is.na(diagnostic_df$facet) &
+      !is.na(diagnostic_df$factor_a) &
+      !is.na(diagnostic_df$factor_b) &
+      !is.na(diagnostic_df$response),
+      , drop = FALSE
+    ]
+
+    if (nrow(diagnostic_df) == 0) {
+      return(data.frame(
+        Facet = "No complete rows",
+        Level_A = "",
+        Level_B = "",
+        n = 0,
+        Levels_A = 0,
+        Levels_B = 0,
+        Status = "Insufficient levels",
+        stringsAsFactors = FALSE
+      ))
+    }
+
+    counts_df <- diagnostic_df %>%
+      dplyr::count(facet, factor_a, factor_b, name = "n") %>%
+      tidyr::complete(facet, factor_a, factor_b, fill = list(n = 0))
+
+    levels_a_df <- counts_df %>%
+      dplyr::group_by(facet, factor_a) %>%
+      dplyr::summarise(total = sum(n), .groups = "drop") %>%
+      dplyr::group_by(facet) %>%
+      dplyr::summarise(Levels_A = sum(total > 0), .groups = "drop")
+
+    levels_b_df <- counts_df %>%
+      dplyr::group_by(facet, factor_b) %>%
+      dplyr::summarise(total = sum(n), .groups = "drop") %>%
+      dplyr::group_by(facet) %>%
+      dplyr::summarise(Levels_B = sum(total > 0), .groups = "drop")
+
+    summary_df <- counts_df %>%
+      dplyr::left_join(levels_a_df, by = "facet") %>%
+      dplyr::left_join(levels_b_df, by = "facet") %>%
+      dplyr::mutate(
+        Status = ifelse(Levels_A >= 2 & Levels_B >= 2, "OK", "Insufficient levels")
+      ) %>%
+      dplyr::arrange(facet, factor_a, factor_b)
+
+    names(summary_df) <- c("Facet", "Level_A", "Level_B", "n", "Levels_A", "Levels_B", "Status")
+    summary_df
+  })
+
+  output$bar_design_diagnostic <- renderTable({
+    bar_design_diagnostic_data()
+  }, striped = TRUE, bordered = TRUE, spacing = "s")
   
   # 6.2 COLUMN SELECTION (ADAPTIVE TO ANALYSIS TYPE)
   # STRATEGY: Different UI for bar plot vs curve analysis
@@ -708,12 +915,21 @@ server <- function(input, output, session) {
                     multiple = TRUE)
       )
     } else {
-      # BAR PLOT: Single column selection
-      # STRATEGY: Smart default selection (prefer "Fm" if available)
-      selected <- if ("Fm" %in% colnames(result_df$data)) "Fm" else colnames(result_df$data)[1]
-      selectInput("column", "Select parameter to analyse", 
-                  choices = colnames(result_df$data), 
-                  selected = selected)
+      # BAR PLOT: Single response selection for ANOVA workflows
+      factor_cols <- analysis_var_choices()
+      measure_choices <- setdiff(colnames(result_df$data), factor_cols)
+      if (length(measure_choices) == 0) {
+        measure_choices <- colnames(result_df$data)
+      }
+
+      selected <- if ("Fm" %in% measure_choices) "Fm" else measure_choices[1]
+      selectInput(
+        "column",
+        "Select parameter to analyse",
+        choices = measure_choices,
+        selected = selected,
+        multiple = FALSE
+      )
     }
   })
   
@@ -951,6 +1167,25 @@ server <- function(input, output, session) {
   x_var <- reactive({
     if (input$facet_var == "var1") input$var2 else input$var1
   })
+
+  # Keep facet selector labels aligned with user-defined variable names in curve mode
+  observe({
+    req(input$var1)
+    req(input$var2)
+
+    current_selected <- if (!is.null(input$facet_var) && input$facet_var %in% c("var1", "var2")) {
+      input$facet_var
+    } else {
+      "var1"
+    }
+
+    updateSelectInput(
+      session,
+      "facet_var",
+      choices = setNames(c("var1", "var2"), c(input$var1, input$var2)),
+      selected = current_selected
+    )
+  })
   
   # ===========================================
   # SECTION 9: GROUP ORDERING UI
@@ -1120,103 +1355,33 @@ server <- function(input, output, session) {
     tryCatch({
       # STORE COLUMN NAMES AS SIMPLE STRINGS
       value_col <- as.character(VALUE()[1])
-      x_col <- as.character(x_var())
-      facet_col <- as.character(facet_var())
-      
-      # DEBUG
-      print(paste("Converting with columns:", x_col, facet_col, value_col))
-      
-      # EXTRACT DATA - SIMPLE APPROACH
-      plot_data <- result_df$data[, c(x_col, facet_col, value_col)]
-      
-      # CONVERT X TO NUMERIC
-      x_values <- plot_data[[x_col]]
-      x_numeric <- suppressWarnings(as.numeric(as.character(x_values)))
-      
-      if (all(is.na(x_numeric))) {
-        # Categorical x variable
-        x_numeric <- as.numeric(factor(x_values, levels = input$var2_order))
-        x_labels <- input$var2_order
-        use_labels <- TRUE
+
+      x_col <- if (!is.null(input$bar_factor_a) && input$bar_factor_a %in% names(result_df$data)) {
+        as.character(input$bar_factor_a)
       } else {
-        use_labels <- FALSE
+        as.character(x_var())
       }
-      
-      # ADD X NUMERIC TO DATA
-      plot_data$x_numeric <- x_numeric
-      
-      # CALCULATE SUMMARY - SIMPLE BASE R APPROACH
-      # STRATEGY: Use aggregate instead of dplyr to avoid .data issues
-      # PURPOSE: Simpler, more reliable aggregation
-      
-      # Create a grouping key
-      plot_data$group_key <- paste(plot_data[[facet_col]], plot_data$x_numeric, sep = "_")
-      
-      # Calculate means
-      means <- aggregate(plot_data[[value_col]], 
-                        by = list(facet = plot_data[[facet_col]], 
-                                 x = plot_data$x_numeric),
-                        FUN = mean, na.rm = TRUE)
-      names(means)[3] <- "mean_value"
-      
-      # Calculate standard errors
-      se_calc <- function(x) {
-        sd(x, na.rm = TRUE) / sqrt(sum(!is.na(x)))
+
+      facet_col <- if (!is.null(input$bar_facet_var) && input$bar_facet_var != "None" &&
+                       input$bar_facet_var %in% names(result_df$data)) {
+        as.character(input$bar_facet_var)
+      } else if (!is.null(input$bar_factor_b) && input$bar_factor_b %in% names(result_df$data) &&
+                 !identical(input$bar_factor_b, x_col)) {
+        as.character(input$bar_factor_b)
+      } else {
+        as.character(facet_var())
       }
-      
-      ses <- aggregate(plot_data[[value_col]], 
-                      by = list(facet = plot_data[[facet_col]], 
-                               x = plot_data$x_numeric),
-                      FUN = se_calc)
-      names(ses)[3] <- "se_value"
-      
-      # Merge
-      summary_data <- merge(means, ses, by = c("facet", "x"))
-      
-      # GENERATE COLORS
-      n_groups <- length(unique(summary_data$facet))
-      colors <- scales::hue_pal()(n_groups)
-      names(colors) <- unique(summary_data$facet)
-      
-      # CREATE PLOT - USING DIRECT COLUMN REFERENCES
-      line_plot <- ggplot(summary_data, aes(x = x, y = mean_value)) +
-        geom_ribbon(aes(ymin = mean_value - se_value, 
-                       ymax = mean_value + se_value,
-                       fill = facet, group = facet),
-                   alpha = 0.2, color = NA) +
-        geom_line(aes(color = facet, group = facet), linewidth = 1.2) +
-        geom_point(aes(color = facet, group = facet), 
-                  size = 3, shape = 21, fill = "white", stroke = 1.5) +
-        labs(
-          x = x_col,
-          y = value_col,
-          color = facet_col,
-          fill = facet_col,
-          title = paste("Curve representation of", value_col)
-        ) +
-        # THEME
-        theme_classic(base_size = 14) +
-        theme(
-          legend.position = "right",
-          legend.title = element_text(face = "bold"),
-          axis.title = element_text(face = "bold", size = 13),
-          axis.text = element_text(size = 12),
-          plot.title = element_text(face = "bold", size = 15, hjust = 0.5),
-          panel.grid.major.y = element_line(color = "grey90"),
-          legend.background = element_rect(fill = "white", color = "grey80")
-        ) +
-        # COLOR SCALES
-        scale_color_manual(values = colors) +
-        scale_fill_manual(values = colors)
-      
-      # CUSTOM X-AXIS LABELS IF CATEGORICAL
-      if (use_labels) {
-        line_plot <- line_plot + 
-          scale_x_continuous(breaks = seq_along(x_labels), labels = x_labels)
-      }
+
+      converted_curve <- build_converted_curve_plot(
+        data = result_df$data,
+        x_col = x_col,
+        facet_col = facet_col,
+        value_col = value_col,
+        x_order = NULL
+      )
       
       # STORE CONVERTED PLOT
-      converted_plot(line_plot)
+      converted_plot(converted_curve$plot)
       show_converted(TRUE)
       
       # UPDATE BUTTON TEXT
@@ -1280,27 +1445,61 @@ server <- function(input, output, session) {
     # PURPOSE: Ensure all necessary inputs are available before analysis
     req(result_df$data)
     req(input$graph_type)
-    req(input$facet_var)
-    req(input$column %in% colnames(result_df$data))
-    req(input$var1_order)
-    req(input$var2_order)
+    req(all(input$column %in% colnames(result_df$data)))
     
 
     if (input$graph_type == "Bar plot") {
-      # BAR PLOT ANALYSIS
-      # STRATEGY: Delegate to specialized analysis function
-      # PURPOSE: Keep server logic clean and modular
-      barplot_results <- analyse_barplot(
-        data = result_df$data,
-        var1 = facet_var(),
-        var2 = x_var(),
-        measure_col = VALUE(),
-        var1_order = input$var1_order,
-        var2_order = input$var2_order,
-        fill_color = input$fill_color,
-        line_color = input$line_color,
-        point_color = input$point_color
-      )
+      current_model <- if (is.null(input$stat_model)) "oneway_anova" else input$stat_model
+      bar_facet_var <- if (!is.null(input$bar_facet_var) && input$bar_facet_var != "None") input$bar_facet_var else NULL
+
+      if (identical(current_model, "twoway_anova")) {
+        req(input$bar_factor_a)
+        req(input$bar_factor_b)
+        barplot_results <- analyse_barplot_twoway(
+          data = result_df$data,
+          factor_a = input$bar_factor_a,
+          factor_b = input$bar_factor_b,
+          measure_col = VALUE()[1],
+          facet_var = bar_facet_var,
+          fill_color = input$fill_color,
+          line_color = input$line_color,
+          point_color = input$point_color
+        )
+      } else if (identical(current_model, "threeway_anova")) {
+        req(input$bar_factor_a)
+        req(input$bar_factor_b)
+        req(input$bar_factor_c)
+        barplot_results <- analyse_barplot_threeway(
+          data = result_df$data,
+          factor_a = input$bar_factor_a,
+          factor_b = input$bar_factor_b,
+          factor_c = input$bar_factor_c,
+          measure_col = VALUE()[1],
+          fill_color = input$fill_color,
+          line_color = input$line_color,
+          point_color = input$point_color
+        )
+      } else {
+        req(input$bar_factor_a)
+        bar_data <- result_df$data
+        bar_var1 <- if (is.null(bar_facet_var)) ".AllData" else bar_facet_var
+        if (identical(bar_var1, ".AllData")) {
+          bar_data[[bar_var1]] <- "AllData"
+        }
+
+        barplot_results <- analyse_barplot(
+          data = bar_data,
+          var1 = bar_var1,
+          var2 = input$bar_factor_a,
+          measure_col = VALUE()[1],
+          var1_order = NULL,
+          var2_order = NULL,
+          fill_color = input$fill_color,
+          line_color = input$line_color,
+          point_color = input$point_color
+        )
+      }
+
       # Extract the normality flag
       flag_normal <- barplot_results$normality
 
@@ -1316,6 +1515,11 @@ server <- function(input, output, session) {
           "Normality test result is unavailable"
         }
       })
+
+      if (!is.null(barplot_results$message)) {
+        showNotification(barplot_results$message, type = "message")
+      }
+
       # STORE RESULTS FOR EXPORT
       # STRATEGY: Separate storage enables independent export functionality
       current_plot(barplot_results$plot)
@@ -1494,6 +1698,27 @@ server <- function(input, output, session) {
             file_list <- c(file_list, cld_file)
           }
 
+          if (!is.null(stats_data$anova2)) {
+            anova2_file <- file.path(temp_dir, "anova_two_way_results.txt")
+            write.table(stats_data$anova2, file = anova2_file,
+                       sep = "\t", row.names = FALSE, quote = FALSE)
+            file_list <- c(file_list, anova2_file)
+          }
+
+          if (!is.null(stats_data$anova3)) {
+            anova3_file <- file.path(temp_dir, "anova_three_way_results.txt")
+            write.table(stats_data$anova3, file = anova3_file,
+                       sep = "\t", row.names = FALSE, quote = FALSE)
+            file_list <- c(file_list, anova3_file)
+          }
+
+          if (!is.null(stats_data$posthoc) && nrow(stats_data$posthoc) > 0) {
+            posthoc_file <- file.path(temp_dir, "posthoc_emmeans_results.txt")
+            write.table(stats_data$posthoc, file = posthoc_file,
+                       sep = "\t", row.names = FALSE, quote = FALSE)
+            file_list <- c(file_list, posthoc_file)
+          }
+
         } else if (input$graph_type == "Curve") {
           # CURVE ANALYSIS STATISTICAL EXPORTS
           # STRATEGY: Export qGAM predictions and statistical test results
@@ -1526,37 +1751,60 @@ server <- function(input, output, session) {
         # PURPOSE: Document how analysis was performed
         params_file <- file.path(temp_dir, "analysis_parameters.txt")
         
-        # Calculate number of plants per group
-        x_var_name <- x_var()
-        facet_var_name <- facet_var()
-        
-        plants_per_group <- aggregate(
-          rep(1, nrow(result_df$data)), 
-          by = list(result_df$data[[x_var_name]], result_df$data[[facet_var_name]]), 
-          FUN = length
-        )
-        names(plants_per_group) <- c(x_var_name, facet_var_name, "n_plants")
-        
         # Create base parameters
+        group_label <- if (input$graph_type == "Bar plot") input$bar_factor_a else x_var()
+        facet_label <- if (input$graph_type == "Bar plot") input$bar_facet_var else facet_var()
+        model_label <- if (input$graph_type == "Bar plot") {
+          if (is.null(input$stat_model) || input$stat_model == "") "oneway_anova" else input$stat_model
+        } else {
+          "curve_qgam"
+        }
+
         base_params <- data.frame(
-          Parameter = c("Analysis Type", "Parameter Column", "Grouping Variable", "Facet Variable"),
+          Parameter = c("Analysis Type", "Statistical Model", "Parameter Column", "Grouping Variable", "Facet Variable"),
           Value = c(input$graph_type,
-                   if(input$graph_type == "Bar plot") input$column else paste(input$column, collapse = ", "),
-                   x_var(), facet_var()),
+                   model_label,
+                   paste(input$column, collapse = ", "),
+                   group_label,
+                   ifelse(is.null(facet_label) || facet_label == "None", "None", facet_label)),
           stringsAsFactors = FALSE
         )
         
         # Add analysis-specific parameters
         if (input$graph_type == "Bar plot") {
           # Get normality status from stored results
-          normality_status <- if (!is.null(stats_data$normality)) {
-            if (stats_data$normality) "Normal" else "Non-normal"
-          } else "Unknown"
+          normality_status <- if (isTRUE(stats_data$normality)) {
+            "Normal"
+          } else if (isFALSE(stats_data$normality)) {
+            "Non-normal"
+          } else {
+            "Unknown"
+          }
           
           # Determine statistical test used
-          statistical_test <- if (!is.null(stats_data$normality)) {
-            if (stats_data$normality) "Parametric (ANOVA + Tukey HSD)" else "Non-parametric (Kruskal-Wallis + Dunn)"
-          } else "Unknown"
+          statistical_test <- if (!is.null(stats_data$model) && stats_data$model == "threeway_anova") {
+            if (!is.null(stats_data$posthoc) && nrow(stats_data$posthoc) > 0) {
+              "Three-way ANOVA + emmeans post-hoc"
+            } else {
+              "Three-way ANOVA"
+            }
+          } else if (!is.null(stats_data$model) && stats_data$model == "twoway_anova") {
+            if (!is.null(stats_data$posthoc) && nrow(stats_data$posthoc) > 0) {
+              "Two-way ANOVA + emmeans post-hoc"
+            } else {
+              "Two-way ANOVA"
+            }
+          } else if (!is.null(stats_data$normality)) {
+            if (stats_data$normality) {
+              "Parametric (ANOVA + Tukey HSD)"
+            } else if (!is.null(stats_data$dunn)) {
+              "Non-parametric (Kruskal-Wallis + Dunn)"
+            } else {
+              "Non-parametric (Kruskal-Wallis only)"
+            }
+          } else {
+            "Unknown"
+          }
           
           additional_params <- data.frame(
             Parameter = c("Data Normality", "Statistical Test Used"),
@@ -1578,11 +1826,43 @@ server <- function(input, output, session) {
         params_info <- rbind(base_params, additional_params)
         
         # Add plants per group information
-        plants_summary <- paste(
-          paste(plants_per_group[[x_var()]], plants_per_group[[facet_var()]], 
-                plants_per_group$n_plants, sep = ": "), 
-          collapse = "; "
-        )
+        if (input$graph_type == "Bar plot") {
+          if (!is.null(input$bar_factor_a) && input$bar_factor_a %in% names(result_df$data)) {
+            if (!is.null(input$bar_facet_var) && input$bar_facet_var != "None" && input$bar_facet_var %in% names(result_df$data)) {
+              plants_per_group <- aggregate(
+                rep(1, nrow(result_df$data)),
+                by = list(result_df$data[[input$bar_factor_a]], result_df$data[[input$bar_facet_var]]),
+                FUN = length
+              )
+              plants_summary <- paste(
+                paste(plants_per_group[[1]], plants_per_group[[2]], plants_per_group[[3]], sep = ": "),
+                collapse = "; "
+              )
+            } else {
+              plants_per_group <- aggregate(
+                rep(1, nrow(result_df$data)),
+                by = list(result_df$data[[input$bar_factor_a]]),
+                FUN = length
+              )
+              plants_summary <- paste(
+                paste(plants_per_group[[1]], plants_per_group[[2]], sep = ": "),
+                collapse = "; "
+              )
+            }
+          } else {
+            plants_summary <- "Unavailable"
+          }
+        } else {
+          plants_per_group <- aggregate(
+            rep(1, nrow(result_df$data)),
+            by = list(result_df$data[[x_var()]], result_df$data[[facet_var()]]),
+            FUN = length
+          )
+          plants_summary <- paste(
+            paste(plants_per_group[[1]], plants_per_group[[2]], plants_per_group[[3]], sep = ": "),
+            collapse = "; "
+          )
+        }
         
         plants_info <- data.frame(
           Parameter = "Number of plants per group",
