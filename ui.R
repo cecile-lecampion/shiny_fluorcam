@@ -646,19 +646,11 @@ ui <- dashboardPage(
                         uiOutput("editParamsBtn"),   # Time parameter configuration (curves only)
                         
                         # FACETING CONFIGURATION (CURVE ONLY)
-                        # STRATEGY: Keep legacy var1/var2 faceting only for curve workflow
-                        # PURPOSE: Avoid confusion with bar plot dedicated factor/facet controls
+                        # STRATEGY: Flexible grouping/faceting for curve workflow
+                        # PURPOSE: Allow using more than two filename variables in line chart mode
                         conditionalPanel(
                           condition = "input.graph_type == 'Curve'",
-                          div(
-                            tags$label(
-                              strong("Facet Variable"), 
-                              span(": Choose how to split your data into separate panels", style = "font-weight: normal;"),
-                              style = "margin-bottom: 10px; display: block;"
-                            ),
-                            selectInput("facet_var", NULL,
-                                        choices = c("var1", "var2"))
-                          ),
+                          uiOutput("curve_grouping_ui"),
                           
                           # GROUP ORDERING INTERFACE
                           # STRATEGY: Drag-and-drop sortable lists
@@ -698,7 +690,7 @@ ui <- dashboardPage(
                         # PURPOSE: Custom color schemes for better visualization
                         div(
                           tags$label(
-                            strong("Select colors:"),
+                            strong("Color settings:"),
                             style = "margin-bottom: 10px; display: block;"
                           )
                         ),
@@ -1006,6 +998,16 @@ ui <- dashboardPage(
                            div(class = "info-box",
                              h4("Model Selection"),
                              verbatimTextOutput("normality_text")
+                           )
+                         )
+                       ),
+
+                       conditionalPanel(
+                         condition = "input.graph_type == 'Curve'",
+                         column(6,
+                           div(class = "info-box",
+                             h4("qGAM k Used"),
+                             verbatimTextOutput("k_effective_text")
                            )
                          )
                        )

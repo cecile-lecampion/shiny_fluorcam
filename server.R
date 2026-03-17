@@ -702,6 +702,61 @@ server <- function(input, output, session) {
     unique(vars)
   })
 
+  # CURVE ANALYSIS CONFIGURATION UI
+  # STRATEGY: Let user choose grouping, facet and optional extra split variable
+  # PURPOSE: Extend line chart workflow beyond legacy var1/var2 layout
+  output$curve_grouping_ui <- renderUI({
+    req(result_df$data)
+    req(input$graph_type == "Curve")
+
+    var_choices <- analysis_var_choices()
+    req(length(var_choices) >= 1)
+
+    selected_group <- if (!is.null(input$curve_group_var) && input$curve_group_var %in% var_choices) {
+      input$curve_group_var
+    } else {
+      var_choices[1]
+    }
+
+    remaining_for_facet <- setdiff(var_choices, selected_group)
+    selected_facet <- if (!is.null(input$curve_facet_var) && input$curve_facet_var %in% remaining_for_facet) {
+      input$curve_facet_var
+    } else if (length(remaining_for_facet) > 0) {
+      remaining_for_facet[1]
+    } else {
+      selected_group
+    }
+
+    remaining_for_split <- setdiff(var_choices, c(selected_group, selected_facet))
+    selected_split <- if (!is.null(input$curve_split_var) &&
+      (identical(input$curve_split_var, "None") || input$curve_split_var %in% remaining_for_split)) {
+      input$curve_split_var
+    } else {
+      "None"
+    }
+
+    tagList(
+      selectInput(
+        "curve_group_var",
+        label = "Grouping variable (color)",
+        choices = var_choices,
+        selected = selected_group
+      ),
+      selectInput(
+        "curve_facet_var",
+        label = "Stratification / Facet variable",
+        choices = if (length(remaining_for_facet) > 0) remaining_for_facet else var_choices,
+        selected = selected_facet
+      ),
+      selectInput(
+        "curve_split_var",
+        label = "Optional split variable",
+        choices = c("None", remaining_for_split),
+        selected = selected_split
+      )
+    )
+  })
+
   # BAR PLOT ANALYSIS CONFIGURATION UI
   # STRATEGY: Dynamic controls based on selected statistical model
   # PURPOSE: Enable one-way, two-way and three-way ANOVA workflows
@@ -1289,34 +1344,58 @@ server <- function(input, output, session) {
     input$column
   })
 
-  # VARIABLE ASSIGNMENT BASED ON FACETING CHOICE
-  # STRATEGY: Dynamic variable assignment for flexible faceting
-  # PURPOSE: Allow users to choose which variable to use for grouping vs faceting
-  facet_var <- reactive({
-    if (input$facet_var == "var1") input$var1 else input$var2
-  })
-  
+  # VARIABLE ASSIGNMENT FOR CURVE ANALYSIS
+  # STRATEGY: Dynamic grouping/faceting from all available filename variables
+  # PURPOSE: Support >2 variables in line chart workflow
   x_var <- reactive({
-    if (input$facet_var == "var1") input$var2 else input$var1
+    var_choices <- analysis_var_choices()
+    req(length(var_choices) >= 1)
+
+    if (!is.null(input$curve_group_var) && input$curve_group_var %in% var_choices) {
+      input$curve_group_var
+    } else {
+      var_choices[1]
+    }
   })
 
-  # Keep facet selector labels aligned with user-defined variable names in curve mode
-  observe({
-    req(input$var1)
-    req(input$var2)
+  facet_var <- reactive({
+    var_choices <- analysis_var_choices()
+    req(length(var_choices) >= 1)
 
-    current_selected <- if (!is.null(input$facet_var) && input$facet_var %in% c("var1", "var2")) {
-      input$facet_var
+    current_group <- x_var()
+    remaining <- setdiff(var_choices, current_group)
+
+    if (!is.null(input$curve_facet_var) && input$curve_facet_var %in% remaining) {
+      input$curve_facet_var
+    } else if (length(remaining) > 0) {
+      remaining[1]
     } else {
-      "var1"
+      current_group
+    }
+  })
+
+  curve_split_var <- reactive({
+    var_choices <- analysis_var_choices()
+    if (is.null(input$curve_split_var) || identical(input$curve_split_var, "None")) {
+      return("None")
     }
 
-    updateSelectInput(
-      session,
-      "facet_var",
-      choices = setNames(c("var1", "var2"), c(input$var1, input$var2)),
-      selected = current_selected
-    )
+    allowed <- setdiff(var_choices, c(x_var(), facet_var()))
+    if (input$curve_split_var %in% allowed) input$curve_split_var else "None"
+  })
+
+  curve_facet_levels <- reactive({
+    req(result_df$data)
+    req(facet_var() %in% names(result_df$data))
+
+    base_vals <- as.character(result_df$data[[facet_var()]])
+    split_name <- curve_split_var()
+    if (!identical(split_name, "None") && split_name %in% names(result_df$data)) {
+      split_vals <- as.character(result_df$data[[split_name]])
+      return(unique(paste(base_vals, split_vals, sep = " | ")))
+    }
+
+    unique(base_vals)
   })
   
   # ===========================================
@@ -1343,8 +1422,12 @@ server <- function(input, output, session) {
   output$var1_order_ui <- renderUI({
     req(result_df$data)
     rank_list(
-      text = paste("Order of", facet_var()),
-      labels = unique(result_df$data[[facet_var()]]),
+      text = if (identical(curve_split_var(), "None")) {
+        paste("Order of", facet_var())
+      } else {
+        paste("Order of", facet_var(), "x", curve_split_var())
+      },
+      labels = curve_facet_levels(),
       input_id = "var1_order"
     )
   })
@@ -1448,16 +1531,47 @@ server <- function(input, output, session) {
     } else if (input$graph_type == "Curve") {
       # CURVE ANALYSIS: One color per group
       # STRATEGY: Dynamic number of color inputs based on data
-      req(input$var2)
-      n_lines <- length(unique(result_df$data[[input$var2]]))
+      req(result_df$data)
+      req(x_var())
+      req(x_var() %in% names(result_df$data))
+      group_levels <- unique(as.character(result_df$data[[x_var()]]))
+      group_levels <- group_levels[!is.na(group_levels)]
+      n_lines <- length(group_levels)
+
       color.inputs <- lapply(seq_len(n_lines), function(i) {
         colourInput(
           inputId = paste0("curve_color_", i),
-          label = tags$span(paste("Color for VAR", i), style = "font-weight: normal;"),
+          label = tags$span(paste("Color for", group_levels[i]), style = "font-weight: normal;"),
           value = scales::hue_pal()(n_lines)[i]  # Default rainbow colors
         )
       })
-      do.call(tagList, color.inputs)
+
+      tagList(
+        div(
+          class = "palette-preset-row",
+          selectInput(
+            "curve_palette_preset",
+            label = "Palette preset",
+            choices = c(
+              "Default hue" = "hue",
+              "Colorblind-friendly" = "okabe_ito",
+              "Pastel" = "pastel",
+              "Vibrant" = "vibrant",
+              "Dark" = "dark"
+            ),
+            selected = "hue"
+          ),
+          actionButton("apply_curve_palette", "Apply preset", class = "btn-info")
+        ),
+        tags$details(
+          class = "color-group-toggle",
+          tags$summary(paste0("Curve colors (", n_lines, " groups)")),
+          div(
+            class = "color-group-body",
+            do.call(tagList, color.inputs)
+          )
+        )
+      )
     }
   })
 
@@ -1497,6 +1611,23 @@ server <- function(input, output, session) {
       updateColourInput(session, paste0("bar_point_color_", i), value = preset_colors[i])
     }
   })
+
+  observeEvent(input$apply_curve_palette, {
+    req(input$graph_type == "Curve")
+    req(result_df$data)
+    req(x_var())
+    req(x_var() %in% names(result_df$data))
+
+    group_levels <- unique(as.character(result_df$data[[x_var()]]))
+    group_levels <- group_levels[!is.na(group_levels)]
+    req(length(group_levels) > 0)
+
+    preset_colors <- build_bar_palette(input$curve_palette_preset, length(group_levels))
+
+    for (i in seq_along(group_levels)) {
+      updateColourInput(session, paste0("curve_color_", i), value = preset_colors[i])
+    }
+  })
   
   # ===========================================
   # SECTION 11: ANALYSIS RESULT DISPLAYS
@@ -1517,8 +1648,8 @@ server <- function(input, output, session) {
   # AUTOMATIC TAB SWITCHING
   # STRATEGY: Guide user to results after analysis
   # PURPOSE: Immediate feedback and result visibility
-  observeEvent(input$start_analysis, {
-    print("Switching to Analysis Results tab")
+  observeEvent(analysis_results(), {
+    req(analysis_results())
     updateTabsetPanel(session, "main_tabs", selected = "Analysis Results")
   })
   # ===========================================
@@ -1677,6 +1808,39 @@ server <- function(input, output, session) {
     show_converted(FALSE)
   })
 
+  curve_analysis_issue <- reactive({
+    if (!identical(input$graph_type, "Curve")) {
+      return(NULL)
+    }
+
+    selected_columns <- input$column
+    if (is.null(selected_columns) || length(selected_columns) == 0) {
+      return("Select at least one parameter to analyse before starting curve analysis.")
+    }
+
+    validated_columns <- user_params$selected_params
+    validated_times <- user_params$times
+    if (is.null(validated_columns) || length(validated_columns) == 0 ||
+        !identical(as.character(validated_columns), as.character(selected_columns)) ||
+        is.null(validated_times) || length(validated_times) != length(selected_columns) ||
+        any(is.na(validated_times))) {
+      return("Click 'Set Measurement Parameters', enter the time values, then click 'Validate' before starting curve analysis.")
+    }
+
+    if (is.null(input$control_group) || identical(input$control_group, "") || is.na(input$control_group)) {
+      return("Select a control group before starting curve analysis.")
+    }
+
+    NULL
+  })
+
+  observeEvent(input$start_analysis, {
+    issue <- isolate(curve_analysis_issue())
+    if (!is.null(issue)) {
+      showNotification(issue, type = "error", duration = 8)
+    }
+  })
+
   # MAIN ANALYSIS REACTIVE
   # STRATEGY: Event-driven analysis execution
   # PURPOSE: Run analysis only when user clicks "Start Analysis"
@@ -1686,6 +1850,11 @@ server <- function(input, output, session) {
     # PURPOSE: Ensure all necessary inputs are available before analysis
     req(result_df$data)
     req(input$graph_type)
+
+    if (identical(input$graph_type, "Curve")) {
+      req(is.null(curve_analysis_issue()))
+    }
+
     req(all(input$column %in% colnames(result_df$data)))
     
 
@@ -1846,7 +2015,8 @@ server <- function(input, output, session) {
       # CURVE ANALYSIS
       # STRATEGY: Additional validation for curve-specific requirements
       # PURPOSE: Ensure curve analysis has all required parameters
-      req(input$var2)
+      req(x_var())
+      req(facet_var())
       req(user_params$selected_params)
       req(input$column)
       req(input$control_group)  # Control group required for statistical comparisons
@@ -1854,7 +2024,7 @@ server <- function(input, output, session) {
       # COLOR VECTOR PREPARATION
       # STRATEGY: Extract user-selected colors for each group
       # PURPOSE: Apply custom colors to curve analysis
-      n_lines <- length(unique(result_df$data[[input$var2]]))
+      n_lines <- length(unique(result_df$data[[x_var()]]))
       curve_colors <- sapply(seq_len(n_lines), function(i) {
         color_input <- input[[paste0("curve_color_", i)]]
         if(is.null(color_input)) "#000000" else color_input
@@ -1863,13 +2033,33 @@ server <- function(input, output, session) {
       # DATA TRANSFORMATION: WIDE TO LONG FORMAT
       # STRATEGY: Convert time points from columns to rows for analysis
       # PURPOSE: Analysis functions expect long format data
+      group_col <- x_var()
+      facet_base_col <- facet_var()
+      split_col <- curve_split_var()
+      long_required <- c(group_col, facet_base_col, input$column)
+      if (!identical(split_col, "None")) {
+        long_required <- c(long_required, split_col)
+      }
+
       long_data <- result_df$data %>%
-        select(all_of(c(x_var(), facet_var(), input$column))) %>%
+        select(all_of(unique(long_required))) %>%
         pivot_longer(
           cols = all_of(input$column),        # Time point columns to reshape
           names_to = "time_point",            # New column with time point names
           values_to = "parameter_value"       # New column with measurement values
-        ) %>%
+        )
+
+      if (!identical(split_col, "None") && split_col %in% names(long_data)) {
+        long_data$.curve_facet <- paste(
+          as.character(long_data[[facet_base_col]]),
+          as.character(long_data[[split_col]]),
+          sep = " | "
+        )
+      } else {
+        long_data$.curve_facet <- as.character(long_data[[facet_base_col]])
+      }
+
+      long_data <- long_data %>%
         mutate(
           # TIME VALUE MAPPING
           # STRATEGY: Map time point names to user-provided numeric values
@@ -1898,12 +2088,38 @@ server <- function(input, output, session) {
         col_vector = curve_colors,
         parameter_col = "parameter_value",     # Transformed parameter column
         time_col = "time_numeric",             # Transformed time column
-        grouping_col = x_var(),
-        facet_col = facet_var(),
+        grouping_col = group_col,
+        facet_col = ".curve_facet",
         control_group = input$control_group,
         k = input$k_param,  # Utiliser la valeur k de l'utilisateur
         user_params = reactiveValuesToList(user_params)
       )
+
+      output$k_effective_text <- renderText({
+        k_info <- curve_results$k_summary
+        if (is.null(k_info)) {
+          return("k transparency info unavailable")
+        }
+
+        used_text <- if (!is.na(k_info$used_min) && !is.na(k_info$used_max)) {
+          if (identical(k_info$used_min, k_info$used_max)) {
+            as.character(k_info$used_min)
+          } else {
+            paste0(k_info$used_min, " to ", k_info$used_max)
+          }
+        } else {
+          "none (insufficient time points)"
+        }
+
+        paste(
+          paste0("Requested k: ", k_info$requested),
+          paste0("Effective k used: ", used_text),
+          paste0("Observed distinct time points per curve: ", k_info$n_time_min, " to ", k_info$n_time_max),
+          paste0("Curves skipped (<3 distinct time points): ", k_info$skipped_curves),
+          "Rule: k_effective = max(3, min(k_requested, n_time)), with n_time >= 3 required.",
+          sep = "\n"
+        )
+      })
 
       # STORE RESULTS FOR EXPORT
       current_plot(curve_results$plot)
@@ -1924,15 +2140,6 @@ server <- function(input, output, session) {
     
     # DEFAULT: Show original analysis result
     analysis_results()
-  })
-
-  # RESULT AVAILABILITY CONFIRMATION
-  # STRATEGY: Ensure export functionality knows when results are ready
-  # PURPOSE: Enable export buttons once analysis is complete
-  observeEvent(analysis_results(), {
-    req(analysis_results())
-    # Results are automatically stored in current_plot and current_stats
-    # This observer ensures they're available for export
   })
 
   # ===========================================
@@ -2068,7 +2275,13 @@ server <- function(input, output, session) {
         
         # Create base parameters
         group_label <- if (input$graph_type == "Bar plot") input$bar_factor_a else x_var()
-        facet_label <- if (input$graph_type == "Bar plot") input$bar_facet_var else facet_var()
+        facet_label <- if (input$graph_type == "Bar plot") input$bar_facet_var else {
+          if (identical(curve_split_var(), "None")) {
+            facet_var()
+          } else {
+            paste0(facet_var(), " x ", curve_split_var())
+          }
+        }
         model_label <- if (input$graph_type == "Bar plot") {
           if (is.null(input$stat_model) || input$stat_model == "") "oneway_anova" else input$stat_model
         } else {
@@ -2140,11 +2353,24 @@ server <- function(input, output, session) {
           )
           
         } else if (input$graph_type == "Curve") {
+          k_summary_text <- if (!is.null(stats_data$k_summary)) {
+            ks <- stats_data$k_summary
+            used <- if (!is.na(ks$used_min) && !is.na(ks$used_max)) {
+              if (identical(ks$used_min, ks$used_max)) as.character(ks$used_min) else paste0(ks$used_min, " to ", ks$used_max)
+            } else {
+              "none"
+            }
+            paste0("requested=", ks$requested, "; used=", used, "; skipped_curves=", ks$skipped_curves)
+          } else {
+            "Unavailable"
+          }
+
           additional_params <- data.frame(
-            Parameter = c("Control Group", "Time Unit", "qGAM Smoothing Parameter (k)"),
+            Parameter = c("Control Group", "Time Unit", "qGAM Smoothing Parameter (k)", "qGAM Effective k summary"),
             Value = c(input$control_group %||% "None",
                      user_params$unit %||% "Not specified",
-                     as.character(input$k_param)),  # Utiliser input$k_param au lieu de k
+                     as.character(input$k_param),
+                     k_summary_text),
             stringsAsFactors = FALSE
           )
         }
@@ -2180,15 +2406,27 @@ server <- function(input, output, session) {
             plants_summary <- "Unavailable"
           }
         } else {
-          plants_per_group <- aggregate(
-            rep(1, nrow(result_df$data)),
-            by = list(result_df$data[[x_var()]], result_df$data[[facet_var()]]),
-            FUN = length
-          )
-          plants_summary <- paste(
-            paste(plants_per_group[[1]], plants_per_group[[2]], plants_per_group[[3]], sep = ": "),
-            collapse = "; "
-          )
+          if (identical(curve_split_var(), "None")) {
+            plants_per_group <- aggregate(
+              rep(1, nrow(result_df$data)),
+              by = list(result_df$data[[x_var()]], result_df$data[[facet_var()]]),
+              FUN = length
+            )
+            plants_summary <- paste(
+              paste(plants_per_group[[1]], plants_per_group[[2]], plants_per_group[[3]], sep = ": "),
+              collapse = "; "
+            )
+          } else {
+            plants_per_group <- aggregate(
+              rep(1, nrow(result_df$data)),
+              by = list(result_df$data[[x_var()]], result_df$data[[facet_var()]], result_df$data[[curve_split_var()]]),
+              FUN = length
+            )
+            plants_summary <- paste(
+              paste(plants_per_group[[1]], plants_per_group[[2]], plants_per_group[[3]], plants_per_group[[4]], sep = ": "),
+              collapse = "; "
+            )
+          }
         }
         
         plants_info <- data.frame(

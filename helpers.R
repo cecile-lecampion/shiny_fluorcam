@@ -2107,6 +2107,43 @@ analyse_curve <- function(df, col_vector,
   } else {
     parameter_col
   }
+
+  compute_effective_k <- function(n_time, k_requested) {
+    if (is.na(n_time) || n_time < 3) {
+      return(NA_integer_)
+    }
+    # mgcv/qgam spline basis needs k >= 3; clamp user k to data-compatible range.
+    k_eff <- min(as.integer(k_requested), n_time)
+    as.integer(max(3L, k_eff))
+  }
+
+  fit_qgam_safely <- function(build_formula, data, k_start, qu = 0.5) {
+    k_candidates <- seq.int(as.integer(k_start), 3L, by = -1L)
+    final_warning <- NULL
+
+    for (k_try in k_candidates) {
+      warning_messages <- character(0)
+      model_fit <- withCallingHandlers(
+        qgam::qgam(
+          build_formula(k_try),
+          data = data,
+          qu = qu
+        ),
+        warning = function(w) {
+          warning_messages <<- c(warning_messages, conditionMessage(w))
+          invokeRestart("muffleWarning")
+        }
+      )
+
+      step_failure <- any(grepl("step failure", warning_messages, ignore.case = TRUE))
+      if (!step_failure || k_try <= 3L) {
+        final_warning <- if (length(warning_messages) > 0) paste(unique(warning_messages), collapse = " | ") else NULL
+        return(list(model = model_fit, k_used = k_try, warning = final_warning))
+      }
+    }
+
+    NULL
+  }
   
   # ===========================================
   # INNER FUNCTION: DATA VALIDATION
@@ -2153,15 +2190,35 @@ analyse_curve <- function(df, col_vector,
       group_by(dplyr::across(all_of(c(facet_col, grouping_col)))) %>%
       group_modify(~{
         tryCatch({
-          mod <- qgam::qgam(
-            as.formula(paste(parameter_col, "~ s(", time_col, ", k=", k, ")")),
+          n_time <- length(unique(.x[[time_col]]))
+          if (n_time < 3) {
+            warning(paste(
+              "Skipped qGAM fit for",
+              unique(.x[[facet_col]])[1], "-", unique(.x[[grouping_col]])[1],
+              ": fewer than 3 distinct time points."
+            ))
+            return(data.frame())
+          }
+
+          k_eff <- compute_effective_k(n_time, k)
+
+          fit_res <- fit_qgam_safely(
+            build_formula = function(k_value) {
+              as.formula(paste0(parameter_col, " ~ s(", time_col, ", k=", k_value, ")"))
+            },
             data = .x,
+            k_start = k_eff,
             qu = 0.5
           )
+          if (is.null(fit_res) || is.null(fit_res$model)) {
+            return(data.frame())
+          }
+          mod <- fit_res$model
           
           newdat <- data.frame(setNames(list(time_grid), time_col))
           newdat[[grouping_col]] <- unique(.x[[grouping_col]])[1]
           newdat[[facet_col]] <- unique(.x[[facet_col]])[1]
+          newdat$k_used <- fit_res$k_used
           
           preds <- predict(mod, newdata = newdat, se.fit = TRUE)
           newdat$fit <- preds$fit
@@ -2192,7 +2249,8 @@ analyse_curve <- function(df, col_vector,
                                     facet_col,
                                     time_col,
                                     parameter_col,
-                                    control_group) {
+                                    control_group,
+                                    k = 5) {
   # STEP 1: GET ALL UNIQUE FACETS
   # STRATEGY: Process each experimental condition separately
   # PURPOSE: Separate statistical testing for each facet level
@@ -2238,14 +2296,35 @@ analyse_curve <- function(df, col_vector,
       )
 
       tryCatch({
+        n_time <- length(unique(df_sub[[time_col]]))
+        if (n_time < 3) {
+          warning(paste("Statistical test skipped for", group, "in", current_facet,
+                        ": fewer than 3 distinct time points."))
+          next
+        }
+
+        k_eff <- compute_effective_k(n_time, k)
+
+        fit_res <- fit_qgam_safely(
+          build_formula = function(k_value) {
+            as.formula(paste0(
+              parameter_col,
+              " ~ s(", time_col, ", by = ", grouping_col, ", k=", k_value, ") + ",
+              grouping_col
+            ))
+          },
+          data = df_sub,
+          k_start = k_eff,
+          qu = 0.5
+        )
+        if (is.null(fit_res) || is.null(fit_res$model)) {
+          next
+        }
+
         # COMPARATIVE qGAM MODEL
         # STRATEGY: Single model with group-specific smooths
         # PURPOSE: Test whether smooth curves differ between groups
-        m1 <- qgam::qgam(
-          as.formula(paste(parameter_col, "~ s(", time_col, ", by = ", grouping_col, ", k=5) +", grouping_col)),
-          data = df_sub,
-          qu = 0.5  # Median regression
-        )
+        m1 <- fit_res$model
 
         # EXTRACT P-VALUE FROM MODEL SUMMARY
         # STRATEGY: Extract smooth term p-value for group difference
@@ -2282,16 +2361,49 @@ analyse_curve <- function(df, col_vector,
     # STRATEGY: Clean and validate data before expensive computations
     # PURPOSE: Ensure data quality and prevent downstream errors
     df_clean <- validate_and_prepare_data(df, parameter_col, time_col, grouping_col, facet_col)
+
+    # Compute per-curve effective k for transparency and reporting.
+    curve_k_table <- df_clean %>%
+      dplyr::group_by(dplyr::across(all_of(c(facet_col, grouping_col)))) %>%
+      dplyr::summarise(
+        n_time = dplyr::n_distinct(.data[[time_col]]),
+        .groups = "drop"
+      ) %>%
+      dplyr::mutate(
+        k_requested = as.integer(k),
+        k_effective = vapply(n_time, compute_effective_k, integer(1), k_requested = k)
+      )
+
+    k_used_values <- curve_k_table$k_effective[!is.na(curve_k_table$k_effective)]
+    n_time_values <- curve_k_table$n_time[!is.na(curve_k_table$n_time)]
+    k_summary <- list(
+      requested = as.integer(k),
+      used_min = if (length(k_used_values) > 0) min(k_used_values) else NA_integer_,
+      used_max = if (length(k_used_values) > 0) max(k_used_values) else NA_integer_,
+      skipped_curves = sum(is.na(curve_k_table$k_effective)),
+      n_time_min = if (length(n_time_values) > 0) min(n_time_values) else NA_integer_,
+      n_time_max = if (length(n_time_values) > 0) max(n_time_values) else NA_integer_
+    )
     
     # STEP 2: qGAM MODEL FITTING
     # STRATEGY: Fit smooth curves to each group
     # PURPOSE: Generate trend lines and confidence intervals
     qgam_preds <- fit_qgam_models(df_clean, grouping_col, facet_col, time_col, parameter_col, k)
+
+    if (nrow(qgam_preds) > 0 && "k_used" %in% names(qgam_preds)) {
+      used_k_table <- qgam_preds %>%
+        dplyr::distinct(dplyr::across(all_of(c(facet_col, grouping_col))), k_used)
+
+      curve_k_table <- curve_k_table %>%
+        dplyr::left_join(used_k_table, by = c(facet_col, grouping_col)) %>%
+        dplyr::mutate(k_effective = dplyr::if_else(!is.na(k_used), as.integer(k_used), k_effective)) %>%
+        dplyr::select(-k_used)
+    }
     
     # STEP 3: STATISTICAL TESTING
     # STRATEGY: Test for significant differences from control
     # PURPOSE: Statistical inference about treatment effects
-    stat_results <- perform_statistical_tests(df_clean, grouping_col, facet_col, time_col, parameter_col, control_group)
+    stat_results <- perform_statistical_tests(df_clean, grouping_col, facet_col, time_col, parameter_col, control_group, k = k)
     
     # STEP 4: MEDIAN POINT CALCULATION
     # STRATEGY: Calculate median values at each time point for overlay
@@ -2449,7 +2561,9 @@ analyse_curve <- function(df, col_vector,
       plot = p,                          # Main visualization
       qgam_predictions = qgam_preds,     # Model predictions for export
       statistical_results = stat_results, # Statistical test results
-      median_points = median_points      # Summary data points
+      median_points = median_points,     # Summary data points
+      k_summary = k_summary,
+      k_details = curve_k_table
     ))
     
   }, error = function(e) {
