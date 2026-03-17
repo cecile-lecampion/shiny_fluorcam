@@ -10,11 +10,13 @@ The FluorCam Data Analysis Toolbox is a Shiny application designed to analyze fl
 
 ### File Requirements
 
-Your data files must follow a specific naming pattern:
+Your data files must follow a naming pattern where variables are separated by underscores:
 
-**Required Format:** `VAR1_VAR2_VAR3.TXT`
+**Required Format:** `VAR1_VAR2_..._VARn.TXT`
 
-**Example:** `Day1_LineA_Plant001.TXT`
+The number of variables (2 to 6) must be set in the **"Number of Variables in Filename"** selector **before uploading your files** — this controls how the filenames are parsed and the upload will not work correctly if the number does not match your actual files.
+
+**Example with 3 variables:** `Day1_LineA_Plant001.TXT`
 
 Where:
 - **VAR1** = First grouping variable (e.g., Day, Treatment, Time)
@@ -23,10 +25,12 @@ Where:
 
 ### Data Structure
 
-Your .TXT files should contain:
-- **Columns for different time points** (e.g., `Fq_L1`, `Fq_L2`, `Fq_D1`, `Fq_D2`)
-- **Parameter measurements** at each time point
-- **Consistent column names** across all files
+Your .TXT files are tab-separated exports from FluorCam software and follow this layout:
+
+- **First column**: parameter names (e.g., `Fo`, `Fm`, `Fv`, `Fm_L1`, `Fq_L1`, ...)
+- **Following columns**: measured values for each area (e.g., `Area 1`, `Area 2`, ...)
+
+Each row is one measured parameter; each column (after the first) is one plant area. All files must contain the same parameter rows and the same number of areas.
 
 ---
 
@@ -34,19 +38,18 @@ Your .TXT files should contain:
 
 ### 1. File Name Configuration
 
-1. **Define Variables**: Enter what each variable represents in your file names
-   - VAR1: e.g., "Day", "Treatment", "Time"
-   - VAR2: e.g., "Line", "Genotype", "Replicate" 
-   - VAR3: e.g., "PlantID", "SampleID"
+1. **Set the number of variables**: Use the **"Number of Variables in Filename"** selector to choose how many underscore-separated parts your filenames contain (2 to 6). This must be set **before** loading data.
 
-2. **Preview**: Check the filename example to ensure it matches your files
+2. **Define Variables**: Enter what each variable represents in your file names (e.g., for 3 variables: VAR1 = "Day", VAR2 = "Line", VAR3 = "PlantID")
+
+3. **Preview**: Check the live filename example to ensure the pattern matches your files
 
 ### 2. Load Data
 
-1. **Select Directory**: Click "Select Directory" and choose the folder containing your .TXT files
-2. **File Pattern**: Enter the file extension (usually `.TXT`)
-3. **View Files**: Use "Toggle File List" to see which files will be loaded
-4. **Load**: Click "Load Data" to import your files
+1. **Upload files**: Use the upload widget to select one or multiple `.TXT` files
+2. **File Pattern**: Enter the file extension filter (usually `.TXT|.txt`)
+3. **View Files**: Use the file list toggle to preview uploaded files
+4. **Load**: Click "Load Data" to import and parse filenames into variables
 
 **Data Table Features:**
 - **Horizontal scrolling**: View all columns by scrolling left/right
@@ -70,10 +73,17 @@ Your .TXT files should contain:
 
 #### Variable Configuration
 
-1. **Root Selection**: Choose which variable to use for grouping
-2. **Column Selection**: Select which parameters to analyze
-3. **Facet Variable**: Choose how to split data into separate panels
-4. **Reorder Groups**: Drag and drop to change the order of groups
+1. **Root Selection**: Choose the parameter root (Line Chart mode)
+2. **Column Selection**: Select one parameter to analyze
+3. **Bar Plot mode**: Choose model (`One-way`, `Two-way`, `Three-way`) and factors
+    - For `Two-way` and `Three-way`, choose a **Statistical decision strategy**:
+       - `Conservative`
+       - `Robust parametric`
+4. **Line Chart mode**: Choose
+   - `Grouping variable (color)`
+   - `Stratification / Facet variable`
+   - `Optional split variable`
+5. **Reorder Groups**: Drag and drop to change group/facet order
 
 #### Line Chart Specific Options
 
@@ -84,10 +94,21 @@ Your .TXT files should contain:
 
 2. **Control Group**: Select which group to use as control for statistical comparisons
 
+3. **qGAM k transparency**:
+   - The Results tab shows requested `k`, effective `k`, observed time-point range per curve, and skipped curves
+   - Effective rule used by the app:
+     - `k_effective = max(3, min(k_requested, n_time))`
+   - Curves with fewer than 3 distinct time points are skipped
+
+4. **Preflight validation**:
+   - If parameter columns, validated measurement times, or control group are missing, the app shows an explicit error and does not run analysis
+
 #### Color Customization
 
 - **Automatic Colors**: Default color scheme applied
-- **Custom Colors**: Click color boxes to choose specific colors for each group
+- **Palette presets**: Apply a preset palette in one click (`Default hue`, `Colorblind-friendly`, `Pastel`, `Vibrant`, `Dark`)
+- **Custom Colors**: Click color boxes to choose specific colors for each level/group
+- **Compact UI**: For many levels/groups, color controls are grouped in collapsible sections
 
 ### 4. Export Results
 
@@ -127,10 +148,17 @@ Your .TXT files should contain:
 3. **Tukey HSD** (if normal) or **Dunn test** (if non-normal) for pairwise comparisons
 4. **Compact Letter Display (CLD)**: Shows significance groups with letters
 
+For two-way/three-way analysis, decision strategies are:
+- **Conservative**: use ART when any Shapiro test indicates non-normality (or is unavailable)
+- **Robust parametric**: ANOVA can be retained when additional checks are acceptable (variance and balance)
+
+The Results tab (`Model Selection`) shows the decision reason and diagnostics used.
+
 **Output**:
 - Bar chart with error bars (standard error)
 - Significance letters above bars
 - Statistical test results in export files
+- Design Check table (in Data Overview) with `Status` highlighting and compact summary counts
 
 ### Line Chart Analysis
 
@@ -144,6 +172,7 @@ Your .TXT files should contain:
 - Line plot with confidence intervals
 - Smooth curves showing trends
 - Statistical comparisons with control group
+- qGAM `k` transparency summary in Results
 
 ---
 
@@ -168,9 +197,9 @@ Your .TXT files should contain:
 ### Common Issues
 
 1. **"No files found"**: 
-   - Check file naming pattern matches VAR1_VAR2_VAR3.TXT
+   - Check that the **"Number of Variables in Filename"** matches the actual number of underscore-separated parts in your filenames
    - Verify file extension
-   - Ensure files are in the selected directory
+   - Ensure files are uploaded and visible in the uploaded files list
 
 2. **"Missing columns"**: 
    - Check that all files have the same column structure

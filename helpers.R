@@ -341,6 +341,96 @@ summarise_factorial_response <- function(data, group_cols, measure_col, flag_nor
     )
 }
 
+evaluate_factorial_decision <- function(
+  data,
+  factors,
+  measure_col,
+  flag_normal,
+  decision_mode = "conservative",
+  min_n_per_cell = 5,
+  max_imbalance_ratio = 2,
+  alpha_levene = 0.05
+) {
+  mode_clean <- if (is.null(decision_mode) || !(decision_mode %in% c("conservative", "robust_parametric"))) {
+    "conservative"
+  } else {
+    decision_mode
+  }
+
+  keep <- !is.na(data[[measure_col]])
+  for (fac in factors) {
+    keep <- keep & !is.na(data[[fac]])
+  }
+  valid_df <- data[keep, c(factors, measure_col), drop = FALSE]
+
+  if (nrow(valid_df) == 0) {
+    return(list(
+      analysis_method = "art",
+      decision_mode = mode_clean,
+      decision_reason = "No complete rows available for robust parametric checks; used ART.",
+      diagnostics = list(normality = flag_normal, levene_p = NA_real_, min_cell_n = NA_integer_, max_cell_n = NA_integer_, imbalance_ratio = NA_real_)
+    ))
+  }
+
+  counts_df <- valid_df %>%
+    dplyr::count(dplyr::across(all_of(factors)), name = "n")
+
+  min_cell_n <- min(counts_df$n)
+  max_cell_n <- max(counts_df$n)
+  imbalance_ratio <- if (min_cell_n > 0) max_cell_n / min_cell_n else Inf
+
+  interaction_expr <- paste(sprintf("`%s`", factors), collapse = " * ")
+  lev_formula <- stats::as.formula(paste0("`", measure_col, "` ~ ", interaction_expr))
+
+  levene_p <- tryCatch({
+    lev <- rstatix::levene_test(valid_df, lev_formula)
+    as.numeric(lev$p[1])
+  }, error = function(e) {
+    NA_real_
+  })
+
+  balance_ok <- (min_cell_n >= min_n_per_cell) && is.finite(imbalance_ratio) && (imbalance_ratio <= max_imbalance_ratio)
+  variance_ok <- !is.na(levene_p) && (levene_p > alpha_levene)
+
+  if (mode_clean == "conservative") {
+    method <- if (isTRUE(flag_normal)) "anova" else "art"
+    reason <- if (method == "anova") {
+      "Conservative strategy: all tested groups passed Shapiro-Wilk."
+    } else {
+      "Conservative strategy: at least one group failed Shapiro-Wilk (or returned NA), so ART was used."
+    }
+  } else {
+    if (isTRUE(flag_normal)) {
+      method <- "anova"
+      reason <- "Robust strategy: all tested groups passed Shapiro-Wilk; ANOVA retained."
+    } else if (variance_ok && balance_ok) {
+      method <- "anova"
+      reason <- paste0(
+        "Robust strategy: normality was not fully met, but ANOVA retained because Levene p > ",
+        alpha_levene,
+        " and design balance criteria were met (min n per cell >= ", min_n_per_cell,
+        ", imbalance ratio <= ", max_imbalance_ratio, ")."
+      )
+    } else {
+      method <- "art"
+      reason <- "Robust strategy: assumptions for robust parametric ANOVA were not met, so ART was used."
+    }
+  }
+
+  list(
+    analysis_method = method,
+    decision_mode = mode_clean,
+    decision_reason = reason,
+    diagnostics = list(
+      normality = flag_normal,
+      levene_p = levene_p,
+      min_cell_n = min_cell_n,
+      max_cell_n = max_cell_n,
+      imbalance_ratio = imbalance_ratio
+    )
+  )
+}
+
 # Convert emmeans pairwise contrasts to CLD letters
 #========================================================================================================================================
 # STRATEGY: Reuse multcompView letter generation from pairwise p-values
@@ -1011,6 +1101,7 @@ analyse_barplot_twoway <- function(
   factor_b,
   measure_col,
   facet_var = NULL,
+  decision_mode = "conservative",
   fill_color = "ivory1",
   line_color = "darkgrey",
   point_color = "darkgreen",
@@ -1047,13 +1138,22 @@ analyse_barplot_twoway <- function(
 
   flag_normal <- check_normality(shapiro_df)
 
+  decision_info <- evaluate_factorial_decision(
+    data = data,
+    factors = c(factor_a, factor_b),
+    measure_col = measure_col,
+    flag_normal = flag_normal,
+    decision_mode = decision_mode
+  )
+  analysis_method <- decision_info$analysis_method
+
   summary_groups <- c(factor_a, factor_b)
   if (!is.null(facet_var)) {
     summary_groups <- c(summary_groups, facet_var)
   }
 
-  summary_df <- summarise_factorial_response(data, summary_groups, measure_col, flag_normal)
-  summary_label <- if (flag_normal) "mean" else "median"
+  summary_df <- summarise_factorial_response(data, summary_groups, measure_col, analysis_method == "anova")
+  summary_label <- if (analysis_method == "anova") "mean" else "median"
 
   formula_tw <- stats::as.formula(paste0("`", measure_col, "` ~ `", factor_a, "` * `", factor_b, "`"))
 
@@ -1091,12 +1191,11 @@ analyse_barplot_twoway <- function(
   }
 
   warning_messages <- character()
-  analysis_method <- if (flag_normal) "anova" else "art"
-
-  if (!flag_normal) {
+  warning_messages <- c(warning_messages, decision_info$decision_reason)
+  if (analysis_method == "art") {
     warning_messages <- c(
       warning_messages,
-      "Normality assumption not met: used aligned rank transform (ART) non-parametric factorial model."
+      "Used aligned rank transform (ART) non-parametric factorial model."
     )
   }
 
@@ -1113,7 +1212,7 @@ analyse_barplot_twoway <- function(
         return(NULL)
       }
 
-      if (flag_normal) {
+      if (analysis_method == "anova") {
         res <- tryCatch(
           rstatix::anova_test(subset_df, formula_tw),
           error = function(e) {
@@ -1180,7 +1279,7 @@ analyse_barplot_twoway <- function(
       stop(build_level_issue())
     }
 
-    if (flag_normal) {
+    if (analysis_method == "anova") {
       anova_result <- as.data.frame(rstatix::get_anova_table(rstatix::anova_test(data, formula_tw)))
     } else {
       if (!requireNamespace("ARTool", quietly = TRUE)) {
@@ -1204,7 +1303,7 @@ analyse_barplot_twoway <- function(
           return(NULL)
         }
 
-        if (flag_normal) {
+        if (analysis_method == "anova") {
           model_fit <- tryCatch(stats::lm(formula_tw, data = subset_df), error = function(e) NULL)
           if (is.null(model_fit)) {
             return(NULL)
@@ -1248,7 +1347,7 @@ analyse_barplot_twoway <- function(
         posthoc_result <- dplyr::bind_rows(posthoc_list) %>% dplyr::relocate(all_of(facet_var))
       }
     } else {
-      if (flag_normal) {
+      if (analysis_method == "anova") {
         model_fit <- tryCatch(stats::lm(formula_tw, data = data), error = function(e) NULL)
         if (!is.null(model_fit)) {
           a_within_b <- tryCatch(
@@ -1407,6 +1506,9 @@ analyse_barplot_twoway <- function(
     cld = cld_result,
     model = "twoway_anova",
     method = analysis_method,
+    decision_mode = decision_info$decision_mode,
+    decision_reason = decision_info$decision_reason,
+    decision_diagnostics = decision_info$diagnostics,
     message = if (length(warning_messages) > 0) paste(unique(warning_messages), collapse = " ") else NULL
   ))
 }
@@ -1423,6 +1525,7 @@ analyse_barplot_threeway <- function(
   factor_c,
   measure_col,
   facet_var = NULL,
+  decision_mode = "conservative",
   fill_color = "ivory1",
   line_color = "darkgrey",
   point_color = "darkgreen",
@@ -1468,23 +1571,31 @@ analyse_barplot_threeway <- function(
 
   flag_normal <- check_normality(shapiro_df)
 
+  decision_info <- evaluate_factorial_decision(
+    data = data,
+    factors = c(factor_a, factor_b, factor_c),
+    measure_col = measure_col,
+    flag_normal = flag_normal,
+    decision_mode = decision_mode
+  )
+  analysis_method <- decision_info$analysis_method
+
   summary_groups <- required_factors
   if (!is.null(facet_var)) summary_groups <- c(summary_groups, facet_var)
 
-  summary_df <- summarise_factorial_response(data, summary_groups, measure_col, flag_normal)
-  summary_label <- if (flag_normal) "mean" else "median"
+  summary_df <- summarise_factorial_response(data, summary_groups, measure_col, analysis_method == "anova")
+  summary_label <- if (analysis_method == "anova") "mean" else "median"
 
   formula_th <- stats::as.formula(
     paste0("`", measure_col, "` ~ `", factor_a, "` * `", factor_b, "` * `", factor_c, "`")
   )
 
   warning_messages <- character()
-  analysis_method <- if (flag_normal) "anova" else "art"
-
-  if (!flag_normal) {
+  warning_messages <- c(warning_messages, decision_info$decision_reason)
+  if (analysis_method == "art") {
     warning_messages <- c(
       warning_messages,
-      "Normality assumption not met: used aligned rank transform (ART) non-parametric factorial model."
+      "Used aligned rank transform (ART) non-parametric factorial model."
     )
   }
 
@@ -1507,7 +1618,7 @@ analyse_barplot_threeway <- function(
         return(NULL)
       }
 
-      if (flag_normal) {
+      if (analysis_method == "anova") {
         res <- tryCatch(
           rstatix::anova_test(subset_df, formula_th),
           error = function(e) {
@@ -1559,7 +1670,7 @@ analyse_barplot_threeway <- function(
         paste(bad_factors, collapse = ", "), "."
       ))
     }
-    if (flag_normal) {
+    if (analysis_method == "anova") {
       anova_result <- as.data.frame(rstatix::get_anova_table(rstatix::anova_test(data, formula_th)))
     } else {
       if (!requireNamespace("ARTool", quietly = TRUE)) {
@@ -1584,7 +1695,7 @@ analyse_barplot_threeway <- function(
         )
         if (length(bad_factors) > 0) return(NULL)
 
-        if (flag_normal) {
+        if (analysis_method == "anova") {
           model_fit <- tryCatch(stats::lm(formula_th, data = subset_df), error = function(e) NULL)
           if (is.null(model_fit)) return(NULL)
 
@@ -1610,7 +1721,7 @@ analyse_barplot_threeway <- function(
         posthoc_result <- dplyr::bind_rows(posthoc_list) %>% dplyr::relocate(all_of(facet_var))
       }
     } else {
-      if (flag_normal) {
+      if (analysis_method == "anova") {
         model_fit <- tryCatch(stats::lm(formula_th, data = data), error = function(e) NULL)
         if (!is.null(model_fit)) {
           a_within_bc <- tryCatch(run_emmeans_pairwise(model_fit, factor_a, c(factor_b, factor_c)), error = function(e) NULL)
@@ -1764,6 +1875,9 @@ analyse_barplot_threeway <- function(
     cld = cld_result,
     model = "threeway_anova",
     method = analysis_method,
+    decision_mode = decision_info$decision_mode,
+    decision_reason = decision_info$decision_reason,
+    decision_diagnostics = decision_info$diagnostics,
     message = if (length(warning_messages) > 0) paste(unique(warning_messages), collapse = " ") else NULL
   ))
 }

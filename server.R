@@ -393,7 +393,7 @@ server <- function(input, output, session) {
 
 
   # ===========================================
-  # SECTION 2: FILE PREVIEW FUNCTIONALITY
+  # SECTION 2.1: FILE PREVIEW FUNCTIONALITY
   # ===========================================
   # STRATEGY: Allow users to preview files before loading
   # PURPOSE: Prevent loading wrong files, provide transparency
@@ -835,6 +835,18 @@ server <- function(input, output, session) {
           "Stratification / Facet variable (optional)",
           choices = c("None", var_choices),
           selected = "None"
+        )
+      ),
+      conditionalPanel(
+        condition = "input.stat_model == 'twoway_anova' || input.stat_model == 'threeway_anova'",
+        selectInput(
+          "parametric_strategy",
+          "Statistical decision strategy",
+          choices = c(
+            "Conservative (switch to ART if any Shapiro p <= 0.05)" = "conservative",
+            "Robust parametric (retain ANOVA when variance/balance checks are acceptable)" = "robust_parametric"
+          ),
+          selected = "conservative"
         )
       )
     )
@@ -1653,7 +1665,7 @@ server <- function(input, output, session) {
     updateTabsetPanel(session, "main_tabs", selected = "Analysis Results")
   })
   # ===========================================
-  # SECTION 11.5: CONVERT TO CURVE BUTTON
+  # SECTION 11.1: CONVERT TO CURVE BUTTON
   # ===========================================
   # STRATEGY: Allow conversion of bar plot to line plot
   # PURPOSE: Visualize time series trends from bar plot data
@@ -1680,7 +1692,7 @@ server <- function(input, output, session) {
     )
   })
   # ===========================================
-  # SECTION 11.6: BAR PLOT TO CURVE CONVERSION (CORRECTED)
+  # SECTION 11.2: BAR PLOT TO CURVE CONVERSION
   # ===========================================
   # STRATEGY: Convert bar plot faceted data to line plot with multiple curves
   # PURPOSE: Visualize trends across time/groups in a single plot
@@ -1780,13 +1792,8 @@ server <- function(input, output, session) {
     })
   })
   
-  # SUPPRIMEZ COMPLÈTEMENT CETTE SECTION (lignes ~936-960)
-  # Elle entre en conflit avec l'observateur ci-dessus
-  # observeEvent(input$convert_to_curve, {
-  #   if (!is.null(converted_plot()) && show_converted()) {
-  #     ...
-  #   }
-  # }, ignoreInit = TRUE)
+  # NOTE: Legacy duplicate convert_to_curve observer was removed.
+  # Keeping a single observer avoids conflicting toggle behaviors.
   
   # ===========================================
   # SECTION 12: MAIN ANALYSIS ENGINE
@@ -1894,6 +1901,7 @@ server <- function(input, output, session) {
           factor_b = input$bar_factor_b,
           measure_col = VALUE()[1],
           facet_var = bar_facet_var,
+          decision_mode = if (!is.null(input$parametric_strategy)) input$parametric_strategy else "conservative",
           fill_color = fill_color_value,
           line_color = line_color_value,
           point_color = point_color_value,
@@ -1911,6 +1919,7 @@ server <- function(input, output, session) {
           factor_c = input$bar_factor_c,
           measure_col = VALUE()[1],
           facet_var = bar_facet_var,
+          decision_mode = if (!is.null(input$parametric_strategy)) input$parametric_strategy else "conservative",
           fill_color = fill_color_value,
           line_color = line_color_value,
           point_color = point_color_value,
@@ -1945,6 +1954,30 @@ server <- function(input, output, session) {
       # STRATEGY: Display normality test results to user
       # PURPOSE: Inform statistical approach taken in analysis
       output$normality_text <- renderText({
+        if (!is.null(barplot_results$decision_reason)) {
+          diag <- barplot_results$decision_diagnostics
+          diag_lines <- character(0)
+          if (!is.null(diag)) {
+            if (!is.null(diag$levene_p) && !is.na(diag$levene_p)) {
+              diag_lines <- c(diag_lines, paste0("Levene p-value: ", signif(diag$levene_p, 3)))
+            }
+            if (!is.null(diag$min_cell_n) && !is.na(diag$min_cell_n) && !is.null(diag$max_cell_n) && !is.na(diag$max_cell_n)) {
+              diag_lines <- c(diag_lines, paste0("Cell counts (min to max): ", diag$min_cell_n, " to ", diag$max_cell_n))
+            }
+            if (!is.null(diag$imbalance_ratio) && is.finite(diag$imbalance_ratio)) {
+              diag_lines <- c(diag_lines, paste0("Imbalance ratio (max/min): ", signif(diag$imbalance_ratio, 3)))
+            }
+          }
+
+          method_line <- if (!is.null(barplot_results$method) && identical(barplot_results$method, "art")) {
+            "Method used: ART"
+          } else {
+            "Method used: ANOVA"
+          }
+
+          return(paste(c(method_line, barplot_results$decision_reason, diag_lines), collapse = "\n"))
+        }
+
         if (identical(current_model, "threeway_anova")) {
           if (!is.null(barplot_results$method) && identical(barplot_results$method, "art")) {
             paste(
@@ -2091,7 +2124,7 @@ server <- function(input, output, session) {
         grouping_col = group_col,
         facet_col = ".curve_facet",
         control_group = input$control_group,
-        k = input$k_param,  # Utiliser la valeur k de l'utilisateur
+        k = input$k_param,  # Use user-selected k value
         user_params = reactiveValuesToList(user_params)
       )
 

@@ -135,7 +135,7 @@ Detailed step-by-step usage instructions are available in the **help.md** docume
 
 ## Design Check (Two-way and Three-way ANOVA)
 
-For bar plot analyses using multi-factor ANOVA, the app displays a **Design Check** table before running the model.
+For bar plot analyses using multi-factor ANOVA, the app displays a **Design Check** table in the **Data Overview** tab before running the model.
 
 - **Two-way ANOVA**: counts are shown for each Stratification / Facet variable x Factor A x Factor B combination.
 - **Three-way ANOVA**: counts are shown for each Stratification / Facet variable x Factor A x Factor B x Factor C combination.
@@ -144,6 +144,8 @@ For bar plot analyses using multi-factor ANOVA, the app displays a **Design Chec
 The table includes a `Status` column:
 - `OK`: each facet has at least 2 observed levels for all required factors.
 - `Insufficient levels`: at least one factor has fewer than 2 observed levels in that facet.
+
+A compact summary row is shown above the table (`Rows`, `Facets`, `OK`, `Insufficient`) to quickly assess whether the design is analyzable.
 
 This diagnostic helps identify empty/sparse cells and explains why some stratification levels may be skipped during ANOVA and post-hoc computation.
 
@@ -160,8 +162,27 @@ This diagnostic helps identify empty/sparse cells and explains why some stratifi
 
 | Condition | Model | Post-hoc |
 |-----------|-------|----------|
-| Normal residuals | ANOVA (`rstatix`) | emmeans pairwise (Tukey) |
-| Non-normal residuals | ART (`ARTool`) | emmeans on ART linear model (Holm) |
+| Normal residuals | ANOVA | emmeans pairwise (Tukey) |
+| Non-normal residuals | ART | emmeans on ART linear model (Holm) |
+
+Implementation note: one-way and parametric workflows are handled with `rstatix`; factorial non-parametric workflows use `ARTool`; post-hoc contrasts use `emmeans`.
+
+For two-way and three-way bar-plot workflows, the app now provides a **Statistical decision strategy** setting:
+
+- `Conservative` (default): switch to ART as soon as at least one Shapiro-Wilk test is significant (or unavailable).
+- `Robust parametric`: retain ANOVA when normality is imperfect but variance/balance checks are still acceptable.
+
+The **Model Selection** box reports the decision rationale and key diagnostics (Levene p-value, per-cell sample-size range, imbalance ratio).
+
+### Why Holm correction is used
+
+Post-hoc comparisons in this app use **Holm correction** by default because it offers a good balance between statistical rigor and sensitivity:
+
+- It controls the **family-wise error rate (FWER)**, which limits the chance of reporting any false positive across multiple pairwise tests.
+- It is **less conservative than Bonferroni**, so it usually retains more power while still protecting against multiplicity.
+- It is well suited to **confirmatory post-hoc interpretation** (typical ANOVA/ART workflows), where each reported significant contrast should remain robust.
+
+Methods such as Benjamini-Hochberg (FDR control) are often preferred in more exploratory contexts with many simultaneous tests, but Holm is a conservative and broadly accepted default for confirmatory pairwise inference.
 
 ### Why ANOVA can be acceptable despite imperfect normality
 
@@ -183,7 +204,48 @@ The switch is also triggered when a group is too small for Shapiro-Wilk to compu
 
 > **Note**: ART requires a full-rank design (no empty cells, at least 2 observations per cell). Sparse or unbalanced designs may still cause the ART model to fail; in such cases an error is reported and the affected stratification level is skipped.
 
-Summary bars show **mean ± 95 % CI** under the parametric path and **median ± 2.5/97.5 percentile interval** under the non-parametric path.
+Summary bars show **mean ± 95 % CI** (confidence interval around the mean) under the parametric path, and **median with a 2.5–97.5 percentile interval** (data dispersion range, not a confidence interval around the median) under the non-parametric path.
+
+## Curve Analysis (Line Chart)
+
+The Line Chart workflow now supports flexible variable assignment from all filename variables:
+
+- **Grouping variable (color)**
+- **Stratification / Facet variable**
+- **Optional split variable** (combined with facet labels)
+
+This extends the previous two-variable limitation and allows richer experimental layouts while keeping readable panels.
+
+### qGAM smoothing parameter transparency
+
+In the **Analysis Results** tab, a dedicated `qGAM k Used` box reports:
+
+- requested `k`
+- effective `k` used by the model
+- observed distinct time points per fitted curve (min to max)
+- number of skipped curves (`< 3` distinct time points)
+
+Rule used by the app:
+
+$$
+k_{effective} = \max\left(3, \min\left(k_{requested}, n_{time}\right)\right)
+$$
+
+If qGAM fitting encounters step-failure warnings for a given curve, the app retries automatically with lower admissible `k` values.
+
+### Curve preflight validation
+
+Before running Line Chart analysis, the app checks that:
+
+- at least one parameter column is selected
+- measurement parameters (time values) were validated via `Set Measurement Parameters` -> `Validate`
+- a control group is selected
+
+If one of these conditions is missing, a clear error notification is shown and analysis does not run.
+
+### Color presets
+
+Both Bar Plot and Line Chart now provide palette presets (`Default hue`, `Colorblind-friendly`, `Pastel`, `Vibrant`, `Dark`) with one-click application, while preserving manual per-level color editing.
 
 # Sample Data
 Sample FluorCam `.TXT` files for testing and demonstration purposes can be found in the `sample_data/` directory within the application folder. Users are encouraged to utilize these files to familiarize themselves with the application's features and functionalities.  

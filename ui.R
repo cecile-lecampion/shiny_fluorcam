@@ -493,7 +493,7 @@ ui <- dashboardPage(
                 div(id = "collapse1", class = "panel-collapse collapse in",
                     div(class = "panel-body",
 
-                        # NOMBRE DE VARIABLES
+                        # NUMBER OF VARIABLES
                         # STRATEGY: Let user define how many variables they have
                         # PURPOSE: Flexible configuration for different experimental designs
                        numericInput("num_vars", 
@@ -673,7 +673,7 @@ ui <- dashboardPage(
                             ),
                             uiOutput("control_group_ui")
                           ),
-                          # AJOUTEZ ICI LE CONTRÔLE POUR LE PARAMÈTRE k
+                          # qGAM smoothing parameter control
                           br(),
                           numericInput("k_param", 
                                        "qGAM Smoothing Parameter (k)", 
