@@ -843,14 +843,16 @@ server <- function(input, output, session) {
       req(facet_col %in% names(result_df$data))
     }
 
-    diagnostic_df <- data.frame(stringsAsFactors = FALSE)
-    diagnostic_df$facet <- if (is.null(facet_col)) "All data" else as.character(result_df$data[[facet_col]])
-    diagnostic_df$factor_a <- as.character(result_df$data[[factor_a]])
-    diagnostic_df$factor_b <- as.character(result_df$data[[factor_b]])
+    diagnostic_df <- data.frame(
+      facet = if (is.null(facet_col)) rep("All data", nrow(result_df$data)) else as.character(result_df$data[[facet_col]]),
+      factor_a = as.character(result_df$data[[factor_a]]),
+      factor_b = as.character(result_df$data[[factor_b]]),
+      response = suppressWarnings(as.numeric(result_df$data[[measure_col]])),
+      stringsAsFactors = FALSE
+    )
     if (is_threeway) {
       diagnostic_df$factor_c <- as.character(result_df$data[[factor_c]])
     }
-    diagnostic_df$response <- suppressWarnings(as.numeric(result_df$data[[measure_col]]))
 
     required_not_na <- c("facet", "factor_a", "factor_b", "response")
     if (is_threeway) {

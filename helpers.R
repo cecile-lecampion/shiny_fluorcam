@@ -278,6 +278,62 @@ run_emmeans_pairwise <- function(model, target_factor, by_factors = NULL, adjust
   pairwise_df
 }
 
+# Convert emmeans pairwise contrasts to CLD letters
+#========================================================================================================================================
+# STRATEGY: Reuse multcompView letter generation from pairwise p-values
+# PURPOSE: Display compact significance groups on multi-factor bar plots
+
+build_cld_from_emmeans <- function(posthoc_df, target_factor, by_factors = NULL) {
+  if (is.null(posthoc_df) || nrow(posthoc_df) == 0) {
+    return(NULL)
+  }
+
+  if (!all(c("contrast", "p.value", "target_factor") %in% names(posthoc_df))) {
+    return(NULL)
+  }
+
+  target_df <- posthoc_df[as.character(posthoc_df$target_factor) == target_factor, , drop = FALSE]
+  if (nrow(target_df) == 0) {
+    return(NULL)
+  }
+
+  contrast_split <- strsplit(as.character(target_df$contrast), " - ", fixed = TRUE)
+  valid_pairs <- vapply(contrast_split, length, integer(1)) == 2
+  target_df <- target_df[valid_pairs, , drop = FALSE]
+  contrast_split <- contrast_split[valid_pairs]
+
+  if (nrow(target_df) == 0) {
+    return(NULL)
+  }
+
+  target_df$group1 <- vapply(contrast_split, `[[`, character(1), 1)
+  target_df$group2 <- vapply(contrast_split, `[[`, character(1), 2)
+
+  group_cols <- by_factors[by_factors %in% names(target_df)]
+
+  if (length(group_cols) == 0) {
+    letters_result <- generate_cld_letters(target_df$p.value, target_df$group1, target_df$group2)
+    return(data.frame(
+      target = names(letters_result),
+      cld = unname(letters_result),
+      stringsAsFactors = FALSE
+    ))
+  }
+
+  target_df %>%
+    dplyr::group_by(dplyr::across(all_of(group_cols))) %>%
+    dplyr::summarise(
+      cld = list(generate_cld_letters(p.value, group1, group2)),
+      .groups = "drop"
+    ) %>%
+    tidyr::unnest_longer(cld) %>%
+    dplyr::mutate(
+      !!target_factor := names(cld),
+      cld = as.character(cld)
+    ) %>%
+    dplyr::select(all_of(group_cols), all_of(target_factor), cld)
+}
+
 
 # ===========================================
 # SECTION 3: COMPACT LETTER DISPLAY FUNCTIONS
@@ -1038,6 +1094,7 @@ analyse_barplot_twoway <- function(
   }
 
   posthoc_result <- NULL
+  cld_result <- NULL
   if (requireNamespace("emmeans", quietly = TRUE)) {
     if (!is.null(facet_var)) {
       facet_levels <- unique(as.character(data[[facet_var]]))
@@ -1097,6 +1154,33 @@ analyse_barplot_twoway <- function(
     )
   }
 
+  if (!is.null(posthoc_result) && nrow(posthoc_result) > 0) {
+    cld_groups <- c(factor_b)
+    if (!is.null(facet_var)) {
+      cld_groups <- c(facet_var, cld_groups)
+    }
+
+    cld_result <- build_cld_from_emmeans(
+      posthoc_df = posthoc_result,
+      target_factor = factor_a,
+      by_factors = cld_groups
+    )
+
+    if (!is.null(cld_result) && "target" %in% names(cld_result)) {
+      names(cld_result)[names(cld_result) == "target"] <- factor_a
+    }
+  }
+
+  plot_df <- summary_df
+  if (!is.null(cld_result) && nrow(cld_result) > 0) {
+    join_cols <- intersect(c(factor_a, factor_b, facet_var), names(cld_result))
+    plot_df <- dplyr::left_join(summary_df, cld_result, by = join_cols)
+    plot_df <- plot_df %>%
+      dplyr::mutate(
+        label_y = ci_upper + dplyr::if_else(ci_upper == 0, 0.05, 0.1 * abs(ci_upper))
+      )
+  }
+
   factor_a_levels <- unique(as.character(summary_df[[factor_a]]))
   fill_palette <- if (length(factor_a_levels) > 1) {
     setNames(scales::hue_pal()(length(factor_a_levels)), factor_a_levels)
@@ -1111,7 +1195,7 @@ analyse_barplot_twoway <- function(
   }
 
   p <- ggplot(
-    summary_df,
+    plot_df,
     aes(x = .data[[factor_b]], y = mean_value, fill = .data[[factor_a]])
   ) +
     geom_col(
@@ -1152,6 +1236,18 @@ analyse_barplot_twoway <- function(
       fill = factor_a
     )
 
+  if (!is.null(cld_result) && nrow(cld_result) > 0) {
+    p <- p +
+      geom_text(
+        data = plot_df,
+        aes(x = .data[[factor_b]], y = label_y, label = cld, group = .data[[factor_a]]),
+        position = position_dodge(width = 0.75),
+        na.rm = TRUE,
+        size = 5,
+        inherit.aes = FALSE
+      )
+  }
+
   if (!is.null(facet_var)) {
     p <- p + facet_wrap(as.formula(paste("~", facet_var)), nrow = 1, scales = "free_y")
   }
@@ -1163,6 +1259,7 @@ analyse_barplot_twoway <- function(
     normality = flag_normal,
     anova2 = anova_result,
     posthoc = posthoc_result,
+    cld = cld_result,
     model = "twoway_anova",
     message = if (length(warning_messages) > 0) paste(unique(warning_messages), collapse = " ") else NULL
   ))
@@ -1300,6 +1397,7 @@ analyse_barplot_threeway <- function(
   }
 
   posthoc_result <- NULL
+  cld_result <- NULL
   if (requireNamespace("emmeans", quietly = TRUE)) {
     if (!is.null(facet_var)) {
       facet_levels <- unique(as.character(data[[facet_var]]))
@@ -1344,6 +1442,33 @@ analyse_barplot_threeway <- function(
     )
   }
 
+  if (!is.null(posthoc_result) && nrow(posthoc_result) > 0) {
+    cld_groups <- c(factor_b, factor_c)
+    if (!is.null(facet_var)) {
+      cld_groups <- c(facet_var, cld_groups)
+    }
+
+    cld_result <- build_cld_from_emmeans(
+      posthoc_df = posthoc_result,
+      target_factor = factor_a,
+      by_factors = cld_groups
+    )
+
+    if (!is.null(cld_result) && "target" %in% names(cld_result)) {
+      names(cld_result)[names(cld_result) == "target"] <- factor_a
+    }
+  }
+
+  plot_df <- summary_df
+  if (!is.null(cld_result) && nrow(cld_result) > 0) {
+    join_cols <- intersect(c(factor_a, factor_b, factor_c, facet_var), names(cld_result))
+    plot_df <- dplyr::left_join(summary_df, cld_result, by = join_cols)
+    plot_df <- plot_df %>%
+      dplyr::mutate(
+        label_y = ci_upper + dplyr::if_else(ci_upper == 0, 0.05, 0.1 * abs(ci_upper))
+      )
+  }
+
   factor_a_levels <- unique(as.character(summary_df[[factor_a]]))
   fill_palette <- if (length(factor_a_levels) > 1) {
     setNames(scales::hue_pal()(length(factor_a_levels)), factor_a_levels)
@@ -1358,7 +1483,7 @@ analyse_barplot_threeway <- function(
   }
 
   p <- ggplot(
-    summary_df,
+    plot_df,
     aes(x = .data[[factor_b]], y = mean_value, fill = .data[[factor_a]])
   ) +
     geom_col(
@@ -1399,6 +1524,18 @@ analyse_barplot_threeway <- function(
       fill = factor_a
     )
 
+  if (!is.null(cld_result) && nrow(cld_result) > 0) {
+    p <- p +
+      geom_text(
+        data = plot_df,
+        aes(x = .data[[factor_b]], y = label_y, label = cld, group = .data[[factor_a]]),
+        position = position_dodge(width = 0.75),
+        na.rm = TRUE,
+        size = 5,
+        inherit.aes = FALSE
+      )
+  }
+
   if (!is.null(facet_var)) {
     p <- p + facet_grid(
       as.formula(paste0("`", facet_var, "` ~ `", factor_c, "`")),
@@ -1415,6 +1552,7 @@ analyse_barplot_threeway <- function(
     normality = flag_normal,
     anova3 = anova_result,
     posthoc = posthoc_result,
+    cld = cld_result,
     model = "threeway_anova",
     message = if (length(warning_messages) > 0) paste(unique(warning_messages), collapse = " ") else NULL
   ))
