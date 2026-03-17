@@ -950,7 +950,9 @@ analyse_barplot_twoway <- function(
   facet_var = NULL,
   fill_color = "ivory1",
   line_color = "darkgrey",
-  point_color = "darkgreen"
+  point_color = "darkgreen",
+  fill_palette = NULL,
+  point_palette = NULL
 ) {
   required_cols <- c(factor_a, factor_b, measure_col)
   if (!is.null(facet_var)) {
@@ -1182,17 +1184,33 @@ analyse_barplot_twoway <- function(
   }
 
   factor_a_levels <- unique(as.character(summary_df[[factor_a]]))
-  fill_palette <- if (length(factor_a_levels) > 1) {
+  factor_a_levels <- factor_a_levels[!is.na(factor_a_levels)]
+
+  default_fill_palette <- if (length(factor_a_levels) > 1) {
     setNames(scales::hue_pal()(length(factor_a_levels)), factor_a_levels)
   } else {
     setNames(fill_color, factor_a_levels)
   }
 
-  point_palette <- if (length(factor_a_levels) > 1) {
+  if (!is.null(fill_palette)) {
+    custom_fill <- fill_palette[factor_a_levels]
+    non_missing <- !is.na(custom_fill)
+    default_fill_palette[names(custom_fill[non_missing])] <- custom_fill[non_missing]
+  }
+  fill_palette <- default_fill_palette
+
+  default_point_palette <- if (length(factor_a_levels) > 1) {
     fill_palette
   } else {
     setNames(point_color, factor_a_levels)
   }
+
+  if (!is.null(point_palette)) {
+    custom_point <- point_palette[factor_a_levels]
+    non_missing <- !is.na(custom_point)
+    default_point_palette[names(custom_point[non_missing])] <- custom_point[non_missing]
+  }
+  point_palette <- default_point_palette
 
   p <- ggplot(
     plot_df,
@@ -1279,7 +1297,9 @@ analyse_barplot_threeway <- function(
   facet_var = NULL,
   fill_color = "ivory1",
   line_color = "darkgrey",
-  point_color = "darkgreen"
+  point_color = "darkgreen",
+  fill_palette = NULL,
+  point_palette = NULL
 ) {
   required_cols <- c(factor_a, factor_b, factor_c, measure_col)
   if (!is.null(facet_var)) {
@@ -1470,17 +1490,33 @@ analyse_barplot_threeway <- function(
   }
 
   factor_a_levels <- unique(as.character(summary_df[[factor_a]]))
-  fill_palette <- if (length(factor_a_levels) > 1) {
+  factor_a_levels <- factor_a_levels[!is.na(factor_a_levels)]
+
+  default_fill_palette <- if (length(factor_a_levels) > 1) {
     setNames(scales::hue_pal()(length(factor_a_levels)), factor_a_levels)
   } else {
     setNames(fill_color, factor_a_levels)
   }
 
-  point_palette <- if (length(factor_a_levels) > 1) {
+  if (!is.null(fill_palette)) {
+    custom_fill <- fill_palette[factor_a_levels]
+    non_missing <- !is.na(custom_fill)
+    default_fill_palette[names(custom_fill[non_missing])] <- custom_fill[non_missing]
+  }
+  fill_palette <- default_fill_palette
+
+  default_point_palette <- if (length(factor_a_levels) > 1) {
     fill_palette
   } else {
     setNames(point_color, factor_a_levels)
   }
+
+  if (!is.null(point_palette)) {
+    custom_point <- point_palette[factor_a_levels]
+    non_missing <- !is.na(custom_point)
+    default_point_palette[names(custom_point[non_missing])] <- custom_point[non_missing]
+  }
+  point_palette <- default_point_palette
 
   p <- ggplot(
     plot_df,

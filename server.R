@@ -1300,19 +1300,61 @@ server <- function(input, output, session) {
   # PURPOSE: Provide relevant color customization options
   output$dynamic_color_inputs <- renderUI({
     if (input$graph_type == "Bar plot") {
-      # BAR PLOT: Three color components
-      # STRATEGY: Separate controls for different plot elements
-      tagList(
-        colourInput("line_color",
-                    label = tags$span("Line color", style = "font-weight: normal;"),
-                    value = "darkgrey"),
-        colourInput("fill_color",
-                    label = tags$span("Fill color", style = "font-weight: normal;"),
-                    value = "ivory1"),
-        colourInput("point_color",
-                    label = tags$span("Point color", style = "font-weight: normal;"),
-                    value = "darkgreen")
-      )
+      current_model <- if (is.null(input$stat_model)) "oneway_anova" else input$stat_model
+
+      # TWO/THREE-WAY BAR PLOT: One color per level of factor A
+      if (identical(current_model, "twoway_anova") || identical(current_model, "threeway_anova")) {
+        req(result_df$data)
+        req(input$bar_factor_a)
+        req(input$bar_factor_a %in% names(result_df$data))
+
+        factor_levels <- unique(as.character(result_df$data[[input$bar_factor_a]]))
+        factor_levels <- factor_levels[!is.na(factor_levels)]
+        if (length(factor_levels) == 0) {
+          factor_levels <- "Level1"
+        }
+
+        default_palette <- scales::hue_pal()(length(factor_levels))
+        fill_inputs <- lapply(seq_along(factor_levels), function(i) {
+          colourInput(
+            inputId = paste0("bar_fill_color_", i),
+            label = tags$span(paste0("Fill color - ", factor_levels[i]), style = "font-weight: normal;"),
+            value = default_palette[i]
+          )
+        })
+
+        point_inputs <- lapply(seq_along(factor_levels), function(i) {
+          colourInput(
+            inputId = paste0("bar_point_color_", i),
+            label = tags$span(paste0("Point color - ", factor_levels[i]), style = "font-weight: normal;"),
+            value = default_palette[i]
+          )
+        })
+
+        tagList(
+          colourInput("line_color",
+                      label = tags$span("Bar border color", style = "font-weight: normal;"),
+                      value = "darkgrey"),
+          fill_inputs,
+          point_inputs,
+          colourInput("point_color",
+                      label = tags$span("Point color (single-level fallback)", style = "font-weight: normal;"),
+                      value = "darkgreen")
+        )
+      } else {
+        # ONE-WAY BAR PLOT: Three global color components
+        tagList(
+          colourInput("line_color",
+                      label = tags$span("Line color", style = "font-weight: normal;"),
+                      value = "darkgrey"),
+          colourInput("fill_color",
+                      label = tags$span("Fill color", style = "font-weight: normal;"),
+                      value = "ivory1"),
+          colourInput("point_color",
+                      label = tags$span("Point color", style = "font-weight: normal;"),
+                      value = "darkgreen")
+        )
+      }
     } else if (input$graph_type == "Curve") {
       # CURVE ANALYSIS: One color per group
       # STRATEGY: Dynamic number of color inputs based on data
@@ -1523,6 +1565,29 @@ server <- function(input, output, session) {
     if (input$graph_type == "Bar plot") {
       current_model <- if (is.null(input$stat_model)) "oneway_anova" else input$stat_model
       bar_facet_var <- if (!is.null(input$bar_facet_var) && input$bar_facet_var != "None") input$bar_facet_var else NULL
+      fill_color_value <- if (!is.null(input$fill_color)) input$fill_color else "ivory1"
+      line_color_value <- if (!is.null(input$line_color)) input$line_color else "darkgrey"
+      point_color_value <- if (!is.null(input$point_color)) input$point_color else "darkgreen"
+
+      custom_fill_palette <- NULL
+      custom_point_palette <- NULL
+      if ((identical(current_model, "twoway_anova") || identical(current_model, "threeway_anova")) &&
+          !is.null(input$bar_factor_a) && input$bar_factor_a %in% names(result_df$data)) {
+        factor_levels <- unique(as.character(result_df$data[[input$bar_factor_a]]))
+        factor_levels <- factor_levels[!is.na(factor_levels)]
+
+        if (length(factor_levels) > 0) {
+          fill_values <- sapply(seq_along(factor_levels), function(i) input[[paste0("bar_fill_color_", i)]])
+          if (length(fill_values) == length(factor_levels) && all(!is.na(fill_values)) && all(fill_values != "")) {
+            custom_fill_palette <- setNames(as.character(fill_values), factor_levels)
+          }
+
+          point_values <- sapply(seq_along(factor_levels), function(i) input[[paste0("bar_point_color_", i)]])
+          if (length(point_values) == length(factor_levels) && all(!is.na(point_values)) && all(point_values != "")) {
+            custom_point_palette <- setNames(as.character(point_values), factor_levels)
+          }
+        }
+      }
 
       if (identical(current_model, "twoway_anova")) {
         req(input$bar_factor_a)
@@ -1533,9 +1598,11 @@ server <- function(input, output, session) {
           factor_b = input$bar_factor_b,
           measure_col = VALUE()[1],
           facet_var = bar_facet_var,
-          fill_color = input$fill_color,
-          line_color = input$line_color,
-          point_color = input$point_color
+          fill_color = fill_color_value,
+          line_color = line_color_value,
+          point_color = point_color_value,
+          fill_palette = custom_fill_palette,
+          point_palette = custom_point_palette
         )
       } else if (identical(current_model, "threeway_anova")) {
         req(input$bar_factor_a)
@@ -1548,9 +1615,11 @@ server <- function(input, output, session) {
           factor_c = input$bar_factor_c,
           measure_col = VALUE()[1],
           facet_var = bar_facet_var,
-          fill_color = input$fill_color,
-          line_color = input$line_color,
-          point_color = input$point_color
+          fill_color = fill_color_value,
+          line_color = line_color_value,
+          point_color = point_color_value,
+          fill_palette = custom_fill_palette,
+          point_palette = custom_point_palette
         )
       } else {
         req(input$bar_factor_a)
@@ -1567,9 +1636,9 @@ server <- function(input, output, session) {
           measure_col = VALUE()[1],
           var1_order = NULL,
           var2_order = NULL,
-          fill_color = input$fill_color,
-          line_color = input$line_color,
-          point_color = input$point_color
+          fill_color = fill_color_value,
+          line_color = line_color_value,
+          point_color = point_color_value
         )
       }
 
