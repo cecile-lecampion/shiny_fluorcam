@@ -203,6 +203,143 @@ ui <- dashboardPage(
           display: block;
           margin: 0 auto;
         }
+
+        /* ===========================================
+           DESIGN CHECK TABLE STYLING
+           =========================================== */
+        /* Keep wide two-way/three-way diagnostic tables readable and visually clear. */
+        .design-check-title {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-weight: 700;
+          font-size: 16px;
+          color: #2c3e50;
+          margin: 14px 0 8px 0;
+        }
+
+        .design-check-container {
+          width: 100%;
+          max-width: 100%;
+          overflow-x: auto;
+          overflow-y: hidden;
+          background: #fff;
+          border: 1px solid #dfe6ee;
+          border-radius: 6px;
+          padding: 6px;
+          box-sizing: border-box;
+        }
+
+        .design-check-container table.dataTable {
+          font-size: 12px;
+          width: 100% !important;
+        }
+
+        .design-check-container table.dataTable thead th {
+          background-color: #f4f7fb;
+          border-bottom: 1px solid #dfe6ee;
+          white-space: nowrap;
+        }
+
+        .design-check-container .dataTables_wrapper {
+          width: 100%;
+        }
+
+        .design-check-container .dataTables_wrapper .dataTables_scrollBody {
+          border-bottom: none;
+        }
+
+        .design-summary-row {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin: 8px 0 12px 0;
+        }
+
+        .design-summary-pill {
+          display: inline-flex;
+          align-items: center;
+          padding: 6px 10px;
+          border-radius: 999px;
+          font-size: 12px;
+          font-weight: 600;
+          background: #eef3f8;
+          color: #2c3e50;
+          border: 1px solid #d6e0ea;
+        }
+
+        .design-summary-pill.ok {
+          background: #e8f7ed;
+          color: #1e7e34;
+          border-color: #b9e4c4;
+        }
+
+        .design-summary-pill.warn {
+          background: #fdeceb;
+          color: #a94442;
+          border-color: #f4c7c3;
+        }
+
+        .palette-preset-row {
+          display: flex;
+          gap: 10px;
+          align-items: flex-end;
+          margin: 12px 0;
+          flex-wrap: wrap;
+        }
+
+        .palette-preset-row .form-group {
+          margin-bottom: 0;
+          flex: 1 1 220px;
+        }
+
+        /* ===========================================
+           COLOR GROUP TOGGLES
+           =========================================== */
+        .color-group-toggle {
+          margin-bottom: 10px;
+          border: 1px solid #dfe6ee;
+          border-radius: 6px;
+          background: #ffffff;
+          overflow: hidden;
+        }
+
+        .color-group-toggle summary {
+          cursor: pointer;
+          padding: 10px 12px;
+          font-weight: 600;
+          color: #2c3e50;
+          background: #f4f7fb;
+          list-style: none;
+        }
+
+        .color-group-toggle summary::-webkit-details-marker {
+          display: none;
+        }
+
+        .color-group-toggle summary:before {
+          content: '';
+          display: inline-block;
+          margin-right: 8px;
+          width: 0;
+          height: 0;
+          border-top: 5px solid transparent;
+          border-bottom: 5px solid transparent;
+          border-left: 7px solid #3c8dbc;
+          transition: transform 0.2s ease;
+        }
+
+        .color-group-toggle[open] summary:before {
+          transform: rotate(90deg);
+        }
+
+        .color-group-body {
+          padding: 12px;
+          max-height: 280px;
+          overflow-y: auto;
+          border-top: 1px solid #e8edf3;
+          background: #ffffff;
+        }
         
         /* ===========================================
            FORM ELEMENT IMPROVEMENTS
@@ -506,7 +643,6 @@ ui <- dashboardPage(
                         uiOutput("rootSelect"),      # Parameter root selection (curves only)
                         uiOutput("columnSelect"),    # Column/parameter selection
                         uiOutput("bar_analysis_ui"), # Model/factor selection (bar plot)
-                        uiOutput("bar_design_diagnostic_ui"), # Two-way design diagnostics
                         uiOutput("editParamsBtn"),   # Time parameter configuration (curves only)
                         
                         # FACETING CONFIGURATION (CURVE ONLY)
@@ -812,6 +948,11 @@ ui <- dashboardPage(
                     # PURPOSE: Show which files are ready for analysis
                     tableOutput("selected_files"),
 
+                    # DESIGN CHECK TABLE (BAR PLOT ONLY)
+                    # STRATEGY: Keep diagnostics in the wide Data Overview panel
+                    # PURPOSE: Make status visible before analysis without crowding the sidebar
+                    uiOutput("bar_design_diagnostic_ui"),
+
                     # CONDITIONAL SEPARATOR
                     # STRATEGY: Only show separator when files are present
                     # PURPOSE: Clean layout without unnecessary elements
@@ -863,12 +1004,13 @@ ui <- dashboardPage(
                          condition = "input.graph_type == 'Bar plot'",
                          column(6,
                            div(class = "info-box",
-                             h4("Normality Test"),
+                             h4("Model Selection"),
                              verbatimTextOutput("normality_text")
                            )
                          )
                        )
                      ),
+
                      hr(),
 
                      # MAIN VISUALIZATION DISPLAY

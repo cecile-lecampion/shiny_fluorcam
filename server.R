@@ -806,15 +806,39 @@ server <- function(input, output, session) {
 
     tagList(
       div(
+        class = "design-check-title",
+        icon("table"),
+        tags$span(title_text)
+      ),
+      uiOutput("bar_design_summary_ui"),
+      div(
         class = "alert alert-info",
-        style = "margin-top: 10px; margin-bottom: 10px;",
-        strong(title_text),
-        tags$br(),
+        style = "margin-top: 6px; margin-bottom: 10px;",
         "Counts are computed on complete rows (response and selected factors all non-missing).",
         tags$br(),
         level_text
       ),
-      tableOutput("bar_design_diagnostic")
+      div(
+        class = "design-check-container",
+        DT::dataTableOutput("bar_design_diagnostic")
+      )
+    )
+  })
+
+  output$bar_design_summary_ui <- renderUI({
+    diagnostic_tbl <- bar_design_diagnostic_data()
+    req(is.data.frame(diagnostic_tbl), nrow(diagnostic_tbl) > 0)
+
+    ok_n <- sum(diagnostic_tbl$Status == "OK", na.rm = TRUE)
+    warn_n <- sum(diagnostic_tbl$Status == "Insufficient levels", na.rm = TRUE)
+    facet_n <- if ("Facet" %in% names(diagnostic_tbl)) length(unique(diagnostic_tbl$Facet)) else 0
+
+    div(
+      class = "design-summary-row",
+      tags$span(class = "design-summary-pill", paste("Rows:", nrow(diagnostic_tbl))),
+      tags$span(class = "design-summary-pill", paste("Facets:", facet_n)),
+      tags$span(class = "design-summary-pill ok", paste("OK:", ok_n)),
+      tags$span(class = "design-summary-pill warn", paste("Insufficient:", warn_n))
     )
   })
 
@@ -957,9 +981,45 @@ server <- function(input, output, session) {
     summary_df
   })
 
-  output$bar_design_diagnostic <- renderTable({
-    bar_design_diagnostic_data()
-  }, striped = TRUE, bordered = TRUE, spacing = "s")
+  output$bar_design_diagnostic <- DT::renderDataTable({
+    diagnostic_tbl <- bar_design_diagnostic_data()
+
+    if ("Status" %in% names(diagnostic_tbl)) {
+      diagnostic_tbl <- diagnostic_tbl[, c("Status", setdiff(names(diagnostic_tbl), "Status")), drop = FALSE]
+    }
+
+    status_col_idx <- which(names(diagnostic_tbl) == "Status")
+
+    dt <- DT::datatable(
+      diagnostic_tbl,
+      rownames = FALSE,
+      class = "compact stripe hover",
+      options = list(
+        dom = "t",
+        paging = FALSE,
+        lengthChange = FALSE,
+        ordering = TRUE,
+        autoWidth = TRUE,
+        scrollX = TRUE,
+        scrollY = "260px",
+        scrollCollapse = TRUE
+      )
+    )
+
+    if (length(status_col_idx) == 1) {
+      dt <- dt %>%
+        DT::formatStyle(
+          columns = status_col_idx,
+          fontWeight = "600",
+          color = DT::styleEqual(c("OK", "Insufficient levels"), c("#1e7e34", "#a94442")),
+          backgroundColor = DT::styleEqual(c("OK", "Insufficient levels"), c("#e8f7ed", "#fdeceb")),
+          borderRadius = "4px",
+          padding = "2px 8px"
+        )
+    }
+
+    dt
+  })
   
   # 6.2 COLUMN SELECTION (ADAPTIVE TO ANALYSIS TYPE)
   # STRATEGY: Different UI for bar plot vs curve analysis
@@ -1335,11 +1395,41 @@ server <- function(input, output, session) {
           colourInput("line_color",
                       label = tags$span("Bar border color", style = "font-weight: normal;"),
                       value = "darkgrey"),
-          fill_inputs,
-          point_inputs,
-          colourInput("point_color",
-                      label = tags$span("Point color (single-level fallback)", style = "font-weight: normal;"),
-                      value = "darkgreen")
+          div(
+            class = "palette-preset-row",
+            selectInput(
+              "bar_palette_preset",
+              label = "Palette preset",
+              choices = c(
+                "Default hue" = "hue",
+                "Colorblind-friendly" = "okabe_ito",
+                "Pastel" = "pastel",
+                "Vibrant" = "vibrant",
+                "Dark" = "dark"
+              ),
+              selected = "hue"
+            ),
+            actionButton("apply_bar_palette", "Apply preset", class = "btn-info")
+          ),
+          tags$details(
+            class = "color-group-toggle",
+            tags$summary(paste0("Fill colors (", length(factor_levels), " levels)")),
+            div(
+              class = "color-group-body",
+              fill_inputs
+            )
+          ),
+          tags$details(
+            class = "color-group-toggle",
+            tags$summary(paste0("Point colors (", length(factor_levels), " levels)")),
+            div(
+              class = "color-group-body",
+              point_inputs,
+              colourInput("point_color",
+                          label = tags$span("Point color (single-level fallback)", style = "font-weight: normal;"),
+                          value = "darkgreen")
+            )
+          )
         )
       } else {
         # ONE-WAY BAR PLOT: Three global color components
@@ -1368,6 +1458,43 @@ server <- function(input, output, session) {
         )
       })
       do.call(tagList, color.inputs)
+    }
+  })
+
+  build_bar_palette <- function(preset_name, n_levels) {
+    if (is.null(n_levels) || n_levels <= 0) {
+      return(character(0))
+    }
+
+    preset_key <- if (is.null(preset_name) || identical(preset_name, "")) "hue" else preset_name
+
+    switch(
+      preset_key,
+      okabe_ito = grDevices::palette.colors(n_levels, palette = "Okabe-Ito"),
+      pastel = grDevices::hcl.colors(n_levels, "Pastel 1"),
+      vibrant = grDevices::hcl.colors(n_levels, "Dynamic"),
+      dark = grDevices::hcl.colors(n_levels, "Dark 3"),
+      scales::hue_pal()(n_levels)
+    )
+  }
+
+  observeEvent(input$apply_bar_palette, {
+    req(input$graph_type == "Bar plot")
+    current_model <- if (is.null(input$stat_model)) "oneway_anova" else input$stat_model
+    req(identical(current_model, "twoway_anova") || identical(current_model, "threeway_anova"))
+    req(result_df$data)
+    req(input$bar_factor_a)
+    req(input$bar_factor_a %in% names(result_df$data))
+
+    factor_levels <- unique(as.character(result_df$data[[input$bar_factor_a]]))
+    factor_levels <- factor_levels[!is.na(factor_levels)]
+    req(length(factor_levels) > 0)
+
+    preset_colors <- build_bar_palette(input$bar_palette_preset, length(factor_levels))
+
+    for (i in seq_along(factor_levels)) {
+      updateColourInput(session, paste0("bar_fill_color_", i), value = preset_colors[i])
+      updateColourInput(session, paste0("bar_point_color_", i), value = preset_colors[i])
     }
   })
   
@@ -1649,12 +1776,56 @@ server <- function(input, output, session) {
       # STRATEGY: Display normality test results to user
       # PURPOSE: Inform statistical approach taken in analysis
       output$normality_text <- renderText({
-        if (!is.null(barplot_results$method) && identical(barplot_results$method, "art")) {
-          "Datas don't follow a normal law. ART non-parametric factorial model used"
+        if (identical(current_model, "threeway_anova")) {
+          if (!is.null(barplot_results$method) && identical(barplot_results$method, "art")) {
+            paste(
+              "Method used: Three-way ART + emmeans (Holm)",
+              "Reason: at least one group failed Shapiro-Wilk or returned NA",
+              "Rule: ANOVA is kept only when all tested groups pass normality",
+              sep = "\n"
+            )
+          } else {
+            paste(
+              "Method used: Three-way ANOVA + emmeans (Tukey)",
+              "Reason: all tested groups passed Shapiro-Wilk",
+              "Rule: ART is used only when normality is not supported",
+              sep = "\n"
+            )
+          }
+        } else if (identical(current_model, "twoway_anova")) {
+          if (!is.null(barplot_results$method) && identical(barplot_results$method, "art")) {
+            paste(
+              "Method used: Two-way ART + emmeans (Holm)",
+              "Reason: at least one group failed Shapiro-Wilk or returned NA",
+              "Rule: ANOVA is kept only when all tested groups pass normality",
+              sep = "\n"
+            )
+          } else {
+            paste(
+              "Method used: Two-way ANOVA + emmeans (Tukey)",
+              "Reason: all tested groups passed Shapiro-Wilk",
+              "Rule: ART is used only when normality is not supported",
+              sep = "\n"
+            )
+          }
         } else if (isTRUE(flag_normal)) {
-          "Datas follow a normal law"
+          paste(
+            "Method used: One-way ANOVA + Tukey HSD",
+            "Reason: all tested groups passed Shapiro-Wilk",
+            sep = "\n"
+          )
+        } else if (isFALSE(flag_normal) && !is.null(barplot_results$dunn)) {
+          paste(
+            "Method used: Kruskal-Wallis + Dunn",
+            "Reason: at least one group failed Shapiro-Wilk or returned NA",
+            sep = "\n"
+          )
         } else if (isFALSE(flag_normal)) {
-          "Datas don't follow a normal law"
+          paste(
+            "Method used: Kruskal-Wallis",
+            "Reason: at least one group failed Shapiro-Wilk or returned NA",
+            sep = "\n"
+          )
         } else {
           "Normality test result is unavailable"
         }
