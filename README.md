@@ -133,9 +133,15 @@ Detailed step-by-step usage instructions are available in the **help.md** docume
 - Export procedures
 - Troubleshooting common issues
 
+For Bar Plot analyses, the statistical ZIP export now also includes a `statistical_decision_metadata.txt` file summarizing the selected method, decision rule, reason, and key diagnostics when applicable.
+
+In the **Analysis Results** tab, a `Data Filtering` box summarizes how many rows were loaded, retained, and removed before analysis, together with the main exclusion reasons.
+
+The statistical ZIP export also includes an `analysis_dataset_used.txt` file containing the exact rows retained for the analysis after required-column filtering and cleaning. This is separate from the manual data-table export, which still lets users choose the columns they want to download.
+
 ## Design Check (Two-way and Three-way ANOVA)
 
-For bar plot analyses using multi-factor ANOVA, the app displays a **Design Check** table in the **Data Overview** tab before running the model.
+For Bar Plot analyses using multi-factor ANOVA, the app displays a **Design Check** table in the **Data Overview** tab before running the model.
 
 - **Two-way ANOVA**: counts are shown for each Stratification / Facet variable x Factor A x Factor B combination.
 - **Three-way ANOVA**: counts are shown for each Stratification / Facet variable x Factor A x Factor B x Factor C combination.
@@ -156,6 +162,7 @@ This diagnostic helps identify empty/sparse cells and explains why some stratifi
 | Condition | Model | Post-hoc |
 |-----------|-------|----------|
 | Normal residuals | One-way ANOVA | Tukey HSD |
+| Normal residuals + unequal variances (variance-robust mode) | Welch ANOVA | Games-Howell |
 | Non-normal residuals | Kruskal-Wallis | Dunn (Holm correction) |
 
 ### Two-way and Three-way analysis
@@ -165,9 +172,16 @@ This diagnostic helps identify empty/sparse cells and explains why some stratifi
 | Normal residuals | ANOVA | emmeans pairwise (Tukey) |
 | Non-normal residuals | ART | emmeans on ART linear model (Holm) |
 
-Implementation note: one-way and parametric workflows are handled with `rstatix`; factorial non-parametric workflows use `ARTool`; post-hoc contrasts use `emmeans`.
+Implementation note: one-way workflows use `rstatix` (`anova_test`, `welch_anova_test`, `tukey_hsd`, `games_howell_test`); factorial non-parametric workflows use `ARTool`; post-hoc contrasts use `emmeans`.
 
-For two-way and three-way bar-plot workflows, the app now provides a **Statistical decision strategy** setting:
+For One-way Bar Plot workflows, the app now provides a **One-way parametric strategy** setting:
+
+- `Classical` (default): use one-way ANOVA + Tukey HSD when normality is supported.
+- `Variance-robust`: if normality is supported but at least one Levene test gives p ≤ 0.05, switch to Welch ANOVA + Games-Howell.
+
+If normality is not supported, the app still uses Kruskal-Wallis (with Dunn post-hoc when applicable).
+
+For Two-way and Three-way Bar Plot workflows, the app now provides a **Statistical decision strategy** setting:
 
 - `Conservative` (default): switch to ART as soon as at least one Shapiro-Wilk test is significant (or unavailable).
 - `Robust parametric`: retain ANOVA when normality is imperfect but variance/balance checks are still acceptable.
@@ -246,6 +260,25 @@ If one of these conditions is missing, a clear error notification is shown and a
 ### Color presets
 
 Both Bar Plot and Line Chart now provide palette presets (`Default hue`, `Colorblind-friendly`, `Pastel`, `Vibrant`, `Dark`) with one-click application, while preserving manual per-level color editing.
+
+## Convert Bar Plot to Curve
+
+After a **Bar Plot** analysis is displayed, the **Analysis Results** tab provides a `Convert to Curve` button.
+
+This feature creates a curve-style representation from the currently loaded bar-plot data:
+
+- the bar-plot main x variable becomes the curve x-axis
+- the second grouping variable (or facet variable, when relevant) defines the different curves
+- points correspond to group means already present in the bar-plot workflow
+- the shaded band reflects the mean $\pm$ standard error used for the converted summary
+
+This is especially useful when one filename variable encodes an ordered progression such as time, dose, or developmental stage. For example, if filenames contain values such as `T0`, `T24`, `T48`, the corresponding variable can be used as the bar-plot x factor and then visualized as a curve.
+
+If the x values are numeric, the converted plot uses them as a numeric axis. Otherwise, it keeps the factor order from the data and displays the labels accordingly.
+
+The converted view is a **visual transformation only**: it does not replace the original Bar Plot statistical workflow and does not run the full Line Chart qGAM comparison pipeline. Clicking the button again restores the original Bar Plot.
+
+When exporting the displayed plot, the converted version is saved with the suffix `_curve` in the filename.
 
 # Sample Data
 Sample FluorCam `.TXT` files for testing and demonstration purposes can be found in the `sample_data/` directory within the application folder. Users are encouraged to utilize these files to familiarize themselves with the application's features and functionalities.  

@@ -76,6 +76,9 @@ Each row is one measured parameter; each column (after the first) is one plant a
 1. **Root Selection**: Choose the parameter root (Line Chart mode)
 2. **Column Selection**: Select one parameter to analyze
 3. **Bar Plot mode**: Choose model (`One-way`, `Two-way`, `Three-way`) and factors
+   - For `One-way`, choose a **One-way parametric strategy**:
+      - `Classical`
+      - `Variance-robust`
     - For `Two-way` and `Three-way`, choose a **Statistical decision strategy**:
        - `Conservative`
        - `Robust parametric`
@@ -110,6 +113,21 @@ Each row is one measured parameter; each column (after the first) is one plant a
 - **Custom Colors**: Click color boxes to choose specific colors for each level/group
 - **Compact UI**: For many levels/groups, color controls are grouped in collapsible sections
 
+#### Convert Bar Plot to Curve
+
+After a Bar Plot analysis is generated, the **Analysis Results** tab shows a **Convert to Curve** button.
+
+- The current bar-plot x variable becomes the x-axis of the curve
+- The second grouping variable or facet grouping is used to draw separate curves
+- Points show the group means
+- The shaded band reflects mean $\pm$ standard error in the converted summary
+
+This is useful when one filename variable represents an ordered sequence such as time, dose, or stage. For example, if a filename variable contains values like `0`, `24`, `48` or `T0`, `T24`, `T48`, the Bar Plot can be converted into a curve to visualize the progression more naturally.
+
+If the x values are numeric, they are used as a numeric x-axis. Otherwise, the app keeps the factor order and shows the original labels.
+
+This conversion is for visualization only: it does not rerun the dedicated Line Chart qGAM analysis. Clicking the button again returns to the original Bar Plot. If you export the converted plot, the filename receives the suffix `_curve`.
+
 ### 4. Export Results
 
 #### Statistical Data Export
@@ -117,11 +135,15 @@ Each row is one measured parameter; each column (after the first) is one plant a
 - **Format**: .zip file containing multiple .txt files
 - **Contents**: 
   - Summary statistics
-  - Normality tests (Bar plots only)
+   - Normality tests (Bar Plot only)
   - ANOVA/Kruskal-Wallis results
   - Post-hoc test results
-  - qGAM predictions (Line charts only)
+   - Exact dataset used for the analysis after filtering/cleaning
+   - Statistical decision metadata (Bar Plot only)
+   - qGAM predictions (Line Chart only)
   - Analysis parameters
+
+In the **Analysis Results** tab, a **Data Filtering** box reports how many rows were loaded, retained, and removed before the model was run, together with the main exclusion reasons.
 
 #### Plot Export
 
@@ -132,6 +154,7 @@ Each row is one measured parameter; each column (after the first) is one plant a
 
 ### 5. Processed Data Export
 - **Custom Data Export**: Choose specific columns to export processed data
+- **Independent from the statistical ZIP export**: this manual export remains available even though the statistical ZIP now also includes the exact dataset used for the analysis
 - **Formats**: Tab-separated .tsv file or .csv file or Excel .xlsx file
 
 ---
@@ -144,21 +167,26 @@ Each row is one measured parameter; each column (after the first) is one plant a
 
 **Statistical Tests Performed**:
 1. **Shapiro-Wilk test**: Tests normality of data
-2. **ANOVA** (if normal) or **Kruskal-Wallis** (if non-normal)
-3. **Tukey HSD** (if normal) or **Dunn test** (if non-normal) for pairwise comparisons
+2. **ANOVA** or **Welch ANOVA** (if normal, depending on the selected one-way strategy) or **Kruskal-Wallis** (if non-normal)
+3. **Tukey HSD**, **Games-Howell**, or **Dunn test** for pairwise comparisons depending on the selected method
 4. **Compact Letter Display (CLD)**: Shows significance groups with letters
+
+For one-way analysis, available parametric strategies are:
+- **Classical**: use one-way ANOVA + Tukey HSD when normality is supported
+- **Variance-robust**: if normality is supported but variance homogeneity is not, use Welch ANOVA + Games-Howell
 
 For two-way/three-way analysis, decision strategies are:
 - **Conservative**: use ART when any Shapiro test indicates non-normality (or is unavailable)
 - **Robust parametric**: ANOVA can be retained when additional checks are acceptable (variance and balance)
 
-The Results tab (`Model Selection`) shows the decision reason and diagnostics used.
+The **Analysis Results** tab (`Model Selection`) shows the decision reason and diagnostics used.
 
 **Output**:
 - Bar chart with error bars (standard error)
 - Significance letters above bars
 - Statistical test results in export files
 - Design Check table (in Data Overview) with `Status` highlighting and compact summary counts
+- Optional curve display available through the `Convert to Curve` button for ordered x variables such as time or dose
 
 ### Line Chart Analysis
 

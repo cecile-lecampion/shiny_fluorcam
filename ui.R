@@ -636,6 +636,15 @@ ui <- dashboardPage(
                                      ),
                                      selected = "Bar plot",
                                      inline = TRUE),
+                        div(
+                          class = "alert alert-info",
+                          style = "margin-top: 10px; margin-bottom: 15px; padding: 10px 12px;",
+                          tags$strong("Line Chart vs Convert to Curve"),
+                          tags$br(),
+                          tags$span("Line Chart runs the dedicated qGAM workflow with measurement-time settings and control-group comparisons."),
+                          tags$br(),
+                          tags$span("Convert to Curve is available after a Bar Plot result and only changes the visual display; it does not rerun qGAM analysis.")
+                        ),
                         
                         # DYNAMIC UI SECTIONS
                         # STRATEGY: Server-generated UI based on loaded data structure
@@ -1009,6 +1018,15 @@ ui <- dashboardPage(
                              h4("qGAM k Used"),
                              verbatimTextOutput("k_effective_text")
                            )
+                         )
+                       )
+                     ),
+
+                     fluidRow(
+                       column(12,
+                         div(class = "info-box",
+                           h4("Data Filtering"),
+                           verbatimTextOutput("filtering_text")
                          )
                        )
                      ),

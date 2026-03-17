@@ -811,6 +811,18 @@ server <- function(input, output, session) {
         selected = selected_a
       ),
       conditionalPanel(
+        condition = "input.stat_model == 'oneway_anova'",
+        selectInput(
+          "oneway_parametric_strategy",
+          "One-way parametric strategy",
+          choices = c(
+            "Classical (ANOVA + Tukey HSD)" = "classical",
+            "Variance-robust (use Welch + Games-Howell if Levene p <= 0.05)" = "welch"
+          ),
+          selected = "classical"
+        )
+      ),
+      conditionalPanel(
         condition = "input.stat_model == 'twoway_anova' || input.stat_model == 'threeway_anova'",
         selectInput(
           "bar_factor_b",
@@ -1673,23 +1685,97 @@ server <- function(input, output, session) {
   # SHOW CONVERT BUTTON ONLY FOR BAR PLOTS
   # STRATEGY: Conditional UI based on analysis type
   # PURPOSE: Button appears only when bar plot is generated
+  build_convert_to_curve_ui <- function(show_original = FALSE) {
+    button_label <- if (show_original) {
+      HTML("<i class='fa fa-chart-bar'></i> Show Original Bar Plot")
+    } else {
+      HTML("<i class='fa fa-chart-line'></i> Convert to Curve")
+    }
+
+    button_class <- if (show_original) "btn-secondary btn-sm" else "btn-primary btn-sm"
+    button_style <- if (show_original) {
+      "font-weight: 600;
+       border-radius: 20px;
+       padding: 8px 20px;"
+    } else {
+      "background-color: #17a2b8;
+       border-color: #17a2b8;
+       font-weight: 600;
+       border-radius: 20px;
+       padding: 8px 20px;"
+    }
+
+    div(
+      style = "text-align: center; margin: 20px 0;",
+      div(
+        class = "alert alert-info",
+        style = "display: inline-block; text-align: left; margin-bottom: 12px; padding: 10px 14px; max-width: 720px;",
+        tags$strong("Visual conversion only"),
+        tags$br(),
+        tags$span("Convert to Curve changes the current Bar Plot into a curve-style display."),
+        tags$br(),
+        tags$span("It does not run the dedicated Line Chart qGAM analysis or control-group statistical comparisons.")
+      ),
+      actionButton(
+        "convert_to_curve",
+        button_label,
+        class = button_class,
+        style = button_style
+      )
+    )
+  }
+
+  build_bar_filtering_summary <- function(data, measure_col, factor_cols) {
+    factor_cols <- unique(factor_cols[!is.na(factor_cols) & nzchar(factor_cols)])
+    total_rows <- nrow(data)
+    missing_response <- is.na(data[[measure_col]])
+
+    if (length(factor_cols) > 0) {
+      factor_missing_matrix <- is.na(data[, factor_cols, drop = FALSE])
+      missing_factor <- if (length(factor_cols) == 1) {
+        as.logical(factor_missing_matrix)
+      } else {
+        apply(factor_missing_matrix, 1, any)
+      }
+    } else {
+      missing_factor <- rep(FALSE, total_rows)
+    }
+
+    retained <- !(missing_response | missing_factor)
+
+    list(
+      total_rows = total_rows,
+      retained_rows = sum(retained, na.rm = TRUE),
+      removed_rows = sum(!retained, na.rm = TRUE),
+      missing_response = sum(missing_response, na.rm = TRUE),
+      missing_factors = sum(missing_factor, na.rm = TRUE),
+      required_columns = c(factor_cols, measure_col)
+    )
+  }
+
+  build_curve_filtering_summary <- function(data, parameter_col, time_col, grouping_col, facet_col) {
+    total_rows <- nrow(data)
+    missing_response <- is.na(data[[parameter_col]])
+    missing_time <- is.na(data[[time_col]])
+    missing_grouping <- is.na(data[[grouping_col]])
+    missing_facet <- is.na(data[[facet_col]])
+    retained <- !(missing_response | missing_time | missing_grouping | missing_facet)
+
+    list(
+      total_rows = total_rows,
+      retained_rows = sum(retained, na.rm = TRUE),
+      removed_rows = sum(!retained, na.rm = TRUE),
+      missing_response = sum(missing_response, na.rm = TRUE),
+      missing_time = sum(missing_time, na.rm = TRUE),
+      missing_grouping_or_facet = sum(missing_grouping | missing_facet, na.rm = TRUE)
+    )
+  }
+
   output$convert_to_curve_button <- renderUI({
     req(current_plot())
     req(input$graph_type == "Bar plot")
-    
-    div(
-      style = "text-align: center; margin: 20px 0;",
-      actionButton(
-        "convert_to_curve",
-        HTML("<i class='fa fa-chart-line'></i> Convert to Curve"),
-        class = "btn-primary btn-sm",
-        style = "background-color: #17a2b8; 
-                 border-color: #17a2b8; 
-                 font-weight: 600;
-                 border-radius: 20px;
-                 padding: 8px 20px;"
-      )
-    )
+
+    build_convert_to_curve_ui(show_original = FALSE)
   })
   # ===========================================
   # SECTION 11.2: BAR PLOT TO CURVE CONVERSION
@@ -1718,19 +1804,7 @@ server <- function(input, output, session) {
       
       # RESTORE ORIGINAL BUTTON
       output$convert_to_curve_button <- renderUI({
-        div(
-          style = "text-align: center; margin: 20px 0;",
-          actionButton(
-            "convert_to_curve",
-            HTML("<i class='fa fa-chart-line'></i> Convert to Curve"),
-            class = "btn-primary btn-sm",
-            style = "background-color: #17a2b8; 
-                     border-color: #17a2b8; 
-                     font-weight: 600;
-                     border-radius: 20px;
-                     padding: 8px 20px;"
-          )
-        )
+        build_convert_to_curve_ui(show_original = FALSE)
       })
       return()  # Stop here, don't do conversion
     }
@@ -1770,17 +1844,7 @@ server <- function(input, output, session) {
       
       # UPDATE BUTTON TEXT
       output$convert_to_curve_button <- renderUI({
-        div(
-          style = "text-align: center; margin: 20px 0;",
-          actionButton(
-            "convert_to_curve",
-            HTML("<i class='fa fa-chart-bar'></i> Show Original Bar Plot"),
-            class = "btn-secondary btn-sm",
-            style = "font-weight: 600;
-                     border-radius: 20px;
-                     padding: 8px 20px;"
-          )
-        )
+        build_convert_to_curve_ui(show_original = TRUE)
       })
       
       showNotification("Bar plot converted to curve successfully!", type = "message")
@@ -1908,6 +1972,11 @@ server <- function(input, output, session) {
           fill_palette = custom_fill_palette,
           point_palette = custom_point_palette
         )
+        barplot_results$filtering_summary <- build_bar_filtering_summary(
+          data = result_df$data,
+          measure_col = VALUE()[1],
+          factor_cols = c(input$bar_factor_a, input$bar_factor_b, bar_facet_var)
+        )
       } else if (identical(current_model, "threeway_anova")) {
         req(input$bar_factor_a)
         req(input$bar_factor_b)
@@ -1926,6 +1995,11 @@ server <- function(input, output, session) {
           fill_palette = custom_fill_palette,
           point_palette = custom_point_palette
         )
+        barplot_results$filtering_summary <- build_bar_filtering_summary(
+          data = result_df$data,
+          measure_col = VALUE()[1],
+          factor_cols = c(input$bar_factor_a, input$bar_factor_b, input$bar_factor_c, bar_facet_var)
+        )
       } else {
         req(input$bar_factor_a)
         bar_data <- result_df$data
@@ -1943,7 +2017,13 @@ server <- function(input, output, session) {
           var2_order = NULL,
           fill_color = fill_color_value,
           line_color = line_color_value,
-          point_color = point_color_value
+          point_color = point_color_value,
+          parametric_strategy = if (is.null(input$oneway_parametric_strategy)) "classical" else input$oneway_parametric_strategy
+        )
+        barplot_results$filtering_summary <- build_bar_filtering_summary(
+          data = bar_data,
+          measure_col = VALUE()[1],
+          factor_cols = c(input$bar_factor_a, bar_facet_var)
         )
       }
 
@@ -1970,9 +2050,25 @@ server <- function(input, output, session) {
           }
 
           method_line <- if (!is.null(barplot_results$method) && identical(barplot_results$method, "art")) {
-            "Method used: ART"
+            if (identical(current_model, "threeway_anova")) {
+              "Method used: Three-way ART + emmeans (Holm)"
+            } else {
+              "Method used: Two-way ART + emmeans (Holm)"
+            }
+          } else if (!is.null(barplot_results$method) && identical(barplot_results$method, "welch")) {
+            "Method used: One-way Welch ANOVA + Games-Howell"
+          } else if (!is.null(barplot_results$method) && identical(barplot_results$method, "kruskal")) {
+            if (!is.null(barplot_results$dunn)) {
+              "Method used: Kruskal-Wallis + Dunn"
+            } else {
+              "Method used: Kruskal-Wallis"
+            }
+          } else if (identical(current_model, "threeway_anova")) {
+            "Method used: Three-way ANOVA + emmeans (Tukey)"
+          } else if (identical(current_model, "twoway_anova")) {
+            "Method used: Two-way ANOVA + emmeans (Tukey)"
           } else {
-            "Method used: ANOVA"
+            "Method used: One-way ANOVA + Tukey HSD"
           }
 
           return(paste(c(method_line, barplot_results$decision_reason, diag_lines), collapse = "\n"))
@@ -2031,6 +2127,23 @@ server <- function(input, output, session) {
         } else {
           "Normality test result is unavailable"
         }
+      })
+
+      output$filtering_text <- renderText({
+        summary_info <- barplot_results$filtering_summary
+        if (is.null(summary_info)) {
+          return("Filtering summary unavailable")
+        }
+
+        paste(
+          paste0("Rows loaded: ", summary_info$total_rows),
+          paste0("Rows retained for analysis: ", summary_info$retained_rows),
+          paste0("Rows removed: ", summary_info$removed_rows),
+          paste0("Rows with missing response: ", summary_info$missing_response),
+          paste0("Rows with missing factor/facet values: ", summary_info$missing_factors),
+          paste0("Required columns: ", paste(summary_info$required_columns, collapse = ", ")),
+          sep = "\n"
+        )
       })
 
       if (!is.null(barplot_results$message)) {
@@ -2128,6 +2241,14 @@ server <- function(input, output, session) {
         user_params = reactiveValuesToList(user_params)
       )
 
+      curve_results$filtering_summary <- build_curve_filtering_summary(
+        data = long_data,
+        parameter_col = "parameter_value",
+        time_col = "time_numeric",
+        grouping_col = group_col,
+        facet_col = ".curve_facet"
+      )
+
       output$k_effective_text <- renderText({
         k_info <- curve_results$k_summary
         if (is.null(k_info)) {
@@ -2150,6 +2271,23 @@ server <- function(input, output, session) {
           paste0("Observed distinct time points per curve: ", k_info$n_time_min, " to ", k_info$n_time_max),
           paste0("Curves skipped (<3 distinct time points): ", k_info$skipped_curves),
           "Rule: k_effective = max(3, min(k_requested, n_time)), with n_time >= 3 required.",
+          sep = "\n"
+        )
+      })
+
+      output$filtering_text <- renderText({
+        summary_info <- curve_results$filtering_summary
+        if (is.null(summary_info)) {
+          return("Filtering summary unavailable")
+        }
+
+        paste(
+          paste0("Rows loaded after wide-to-long conversion: ", summary_info$total_rows),
+          paste0("Rows retained for analysis: ", summary_info$retained_rows),
+          paste0("Rows removed: ", summary_info$removed_rows),
+          paste0("Rows with missing parameter value: ", summary_info$missing_response),
+          paste0("Rows with missing mapped time value: ", summary_info$missing_time),
+          paste0("Rows with missing grouping/facet values: ", summary_info$missing_grouping_or_facet),
           sep = "\n"
         )
       })
@@ -2199,80 +2337,140 @@ server <- function(input, output, session) {
         file_list <- c()
         stats_data <- current_stats()  # Get stored statistical results
 
+        # Avoid partial matching on list elements (e.g. anova -> anova2)
+        get_stat <- function(name) {
+          stats_data[[name, exact = TRUE]]
+        }
+
         if (input$graph_type == "Bar plot") {
           # BAR PLOT STATISTICAL EXPORTS
           # STRATEGY: Separate file for each type of statistical result
           # PURPOSE: Organized output that's easy to navigate
 
-          if (!is.null(stats_data$summary)) {
+          if (!is.null(get_stat("summary"))) {
             summary_file <- file.path(temp_dir, "summary_statistics.txt")
-            write.table(stats_data$summary, file = summary_file,
+            write.table(get_stat("summary"), file = summary_file,
                        sep = "\t", row.names = FALSE, quote = FALSE)
             file_list <- c(file_list, summary_file)
           }
 
-          if (!is.null(stats_data$shapiro)) {
+          if (!is.null(get_stat("shapiro"))) {
             shapiro_file <- file.path(temp_dir, "shapiro_normality_test.txt")
-            write.table(stats_data$shapiro, file = shapiro_file,
+            write.table(get_stat("shapiro"), file = shapiro_file,
                        sep = "\t", row.names = FALSE, quote = FALSE)
             file_list <- c(file_list, shapiro_file)
           }
 
-          if (!is.null(stats_data$anova)) {
+          if (!is.null(get_stat("anova"))) {
             anova_file <- file.path(temp_dir, "anova_results.txt")
-            write.table(stats_data$anova, file = anova_file,
+            write.table(get_stat("anova"), file = anova_file,
                        sep = "\t", row.names = FALSE, quote = FALSE)
             file_list <- c(file_list, anova_file)
           }
 
-          if (!is.null(stats_data$tukey)) {
+          if (!is.null(get_stat("welch"))) {
+            welch_file <- file.path(temp_dir, "welch_anova_results.txt")
+            write.table(get_stat("welch"), file = welch_file,
+                       sep = "\t", row.names = FALSE, quote = FALSE)
+            file_list <- c(file_list, welch_file)
+          }
+
+          if (!is.null(get_stat("tukey"))) {
             tukey_file <- file.path(temp_dir, "tukey_hsd_test.txt")
-            write.table(stats_data$tukey, file = tukey_file,
+            write.table(get_stat("tukey"), file = tukey_file,
                        sep = "\t", row.names = FALSE, quote = FALSE)
             file_list <- c(file_list, tukey_file)
           }
 
-          if (!is.null(stats_data$kruskal)) {
+          if (!is.null(get_stat("games_howell"))) {
+            games_howell_file <- file.path(temp_dir, "games_howell_test.txt")
+            write.table(get_stat("games_howell"), file = games_howell_file,
+                       sep = "\t", row.names = FALSE, quote = FALSE)
+            file_list <- c(file_list, games_howell_file)
+          }
+
+          if (!is.null(get_stat("kruskal"))) {
             kruskal_file <- file.path(temp_dir, "kruskal_wallis_test.txt")
-            write.table(stats_data$kruskal, file = kruskal_file,
+            write.table(get_stat("kruskal"), file = kruskal_file,
                        sep = "\t", row.names = FALSE, quote = FALSE)
             file_list <- c(file_list, kruskal_file)
           }
 
-          if (!is.null(stats_data$dunn)) {
+          if (!is.null(get_stat("dunn"))) {
             dunn_file <- file.path(temp_dir, "dunn_post_hoc_test.txt")
-            write.table(stats_data$dunn, file = dunn_file,
+            write.table(get_stat("dunn"), file = dunn_file,
                        sep = "\t", row.names = FALSE, quote = FALSE)
             file_list <- c(file_list, dunn_file)
           }
 
-          if (!is.null(stats_data$cld)) {
+          if (!is.null(get_stat("cld"))) {
             cld_file <- file.path(temp_dir, "compact_letter_display.txt")
-            write.table(stats_data$cld, file = cld_file,
+            write.table(get_stat("cld"), file = cld_file,
                        sep = "\t", row.names = FALSE, quote = FALSE)
             file_list <- c(file_list, cld_file)
           }
 
-          if (!is.null(stats_data$anova2)) {
+          if (!is.null(get_stat("analysis_data")) && nrow(get_stat("analysis_data")) > 0) {
+            analysis_data_file <- file.path(temp_dir, "analysis_dataset_used.txt")
+            write.table(get_stat("analysis_data"), file = analysis_data_file,
+                       sep = "\t", row.names = FALSE, quote = FALSE)
+            file_list <- c(file_list, analysis_data_file)
+          }
+
+          if (!is.null(get_stat("anova2"))) {
             anova2_file <- file.path(temp_dir, "anova_two_way_results.txt")
-            write.table(stats_data$anova2, file = anova2_file,
+            write.table(get_stat("anova2"), file = anova2_file,
                        sep = "\t", row.names = FALSE, quote = FALSE)
             file_list <- c(file_list, anova2_file)
           }
 
-          if (!is.null(stats_data$anova3)) {
+          if (!is.null(get_stat("anova3"))) {
             anova3_file <- file.path(temp_dir, "anova_three_way_results.txt")
-            write.table(stats_data$anova3, file = anova3_file,
+            write.table(get_stat("anova3"), file = anova3_file,
                        sep = "\t", row.names = FALSE, quote = FALSE)
             file_list <- c(file_list, anova3_file)
           }
 
-          if (!is.null(stats_data$posthoc) && nrow(stats_data$posthoc) > 0) {
+          if (!is.null(get_stat("posthoc")) && nrow(get_stat("posthoc")) > 0) {
             posthoc_file <- file.path(temp_dir, "posthoc_emmeans_results.txt")
-            write.table(stats_data$posthoc, file = posthoc_file,
+            write.table(get_stat("posthoc"), file = posthoc_file,
                        sep = "\t", row.names = FALSE, quote = FALSE)
             file_list <- c(file_list, posthoc_file)
           }
+
+          decision_diag <- get_stat("decision_diagnostics")
+          decision_metadata <- data.frame(
+            Parameter = c(
+              "Analysis Type",
+              "Model",
+              "Method Used",
+              "Decision Strategy",
+              "Decision Reason",
+              "Normality Status",
+              "Levene p-value",
+              "Minimum Cell Size",
+              "Maximum Cell Size",
+              "Imbalance Ratio"
+            ),
+            Value = c(
+              input$graph_type,
+              ifelse(is.null(get_stat("model")), "Unknown", get_stat("model")),
+              ifelse(is.null(get_stat("method")), "Unknown", get_stat("method")),
+              ifelse(is.null(get_stat("decision_mode")) || is.na(get_stat("decision_mode")), "Not applicable", get_stat("decision_mode")),
+              ifelse(is.null(get_stat("decision_reason")), "Not available", get_stat("decision_reason")),
+              if (isTRUE(get_stat("normality"))) "Normal" else if (isFALSE(get_stat("normality"))) "Non-normal" else "Unknown",
+              if (!is.null(decision_diag) && !is.null(decision_diag$levene_p) && !is.na(decision_diag$levene_p)) format(decision_diag$levene_p, digits = 4) else "Not applicable",
+              if (!is.null(decision_diag) && !is.null(decision_diag$min_cell_n) && !is.na(decision_diag$min_cell_n)) as.character(decision_diag$min_cell_n) else "Not applicable",
+              if (!is.null(decision_diag) && !is.null(decision_diag$max_cell_n) && !is.na(decision_diag$max_cell_n)) as.character(decision_diag$max_cell_n) else "Not applicable",
+              if (!is.null(decision_diag) && !is.null(decision_diag$imbalance_ratio) && !is.na(decision_diag$imbalance_ratio)) format(decision_diag$imbalance_ratio, digits = 4) else "Not applicable"
+            ),
+            stringsAsFactors = FALSE
+          )
+
+          decision_file <- file.path(temp_dir, "statistical_decision_metadata.txt")
+          write.table(decision_metadata, file = decision_file,
+                     sep = "\t", row.names = FALSE, quote = FALSE)
+          file_list <- c(file_list, decision_file)
 
         } else if (input$graph_type == "Curve") {
           # CURVE ANALYSIS STATISTICAL EXPORTS
@@ -2298,6 +2496,13 @@ server <- function(input, output, session) {
             write.table(stats_data$median_points, file = median_file,
                        sep = "\t", row.names = FALSE, quote = FALSE)
             file_list <- c(file_list, median_file)
+          }
+
+          if (!is.null(get_stat("analysis_data")) && nrow(get_stat("analysis_data")) > 0) {
+            analysis_data_file <- file.path(temp_dir, "analysis_dataset_used.txt")
+            write.table(get_stat("analysis_data"), file = analysis_data_file,
+                       sep = "\t", row.names = FALSE, quote = FALSE)
+            file_list <- c(file_list, analysis_data_file)
           }
         }
 
@@ -2334,49 +2539,62 @@ server <- function(input, output, session) {
         # Add analysis-specific parameters
         if (input$graph_type == "Bar plot") {
           # Get normality status from stored results
-          normality_status <- if (isTRUE(stats_data$normality)) {
+          normality_status <- if (isTRUE(get_stat("normality"))) {
             "Normal"
-          } else if (isFALSE(stats_data$normality)) {
+          } else if (isFALSE(get_stat("normality"))) {
             "Non-normal"
           } else {
             "Unknown"
           }
           
           # Determine statistical test used
-          statistical_test <- if (!is.null(stats_data$model) && stats_data$model == "threeway_anova") {
-            if (!is.null(stats_data$method) && identical(stats_data$method, "art")) {
-              if (!is.null(stats_data$posthoc) && nrow(stats_data$posthoc) > 0) {
+          statistical_test <- if (!is.null(get_stat("model")) && get_stat("model") == "threeway_anova") {
+            if (!is.null(get_stat("method")) && identical(get_stat("method"), "art")) {
+              if (!is.null(get_stat("posthoc")) && nrow(get_stat("posthoc")) > 0) {
                 "Three-way ART + emmeans post-hoc"
               } else {
                 "Three-way ART"
               }
-            } else if (!is.null(stats_data$posthoc) && nrow(stats_data$posthoc) > 0) {
+            } else if (!is.null(get_stat("posthoc")) && nrow(get_stat("posthoc")) > 0) {
               "Three-way ANOVA + emmeans post-hoc"
             } else {
               "Three-way ANOVA"
             }
-          } else if (!is.null(stats_data$model) && stats_data$model == "twoway_anova") {
-            if (!is.null(stats_data$method) && identical(stats_data$method, "art")) {
-              if (!is.null(stats_data$posthoc) && nrow(stats_data$posthoc) > 0) {
+          } else if (!is.null(get_stat("model")) && get_stat("model") == "twoway_anova") {
+            if (!is.null(get_stat("method")) && identical(get_stat("method"), "art")) {
+              if (!is.null(get_stat("posthoc")) && nrow(get_stat("posthoc")) > 0) {
                 "Two-way ART + emmeans post-hoc"
               } else {
                 "Two-way ART"
               }
-            } else if (!is.null(stats_data$posthoc) && nrow(stats_data$posthoc) > 0) {
+            } else if (!is.null(get_stat("posthoc")) && nrow(get_stat("posthoc")) > 0) {
               "Two-way ANOVA + emmeans post-hoc"
             } else {
               "Two-way ANOVA"
             }
-          } else if (!is.null(stats_data$normality)) {
-            if (stats_data$normality) {
+          } else if (!is.null(get_stat("normality"))) {
+            if (!is.null(get_stat("method")) && identical(get_stat("method"), "welch")) {
+              "Variance-robust (Welch ANOVA + Games-Howell)"
+            } else if (isTRUE(get_stat("normality"))) {
               "Parametric (ANOVA + Tukey HSD)"
-            } else if (!is.null(stats_data$dunn)) {
+            } else if (!is.null(get_stat("dunn"))) {
               "Non-parametric (Kruskal-Wallis + Dunn)"
             } else {
               "Non-parametric (Kruskal-Wallis only)"
             }
           } else {
             "Unknown"
+          }
+
+          if (identical(model_label, "oneway_anova")) {
+            additional_params <- rbind(
+              additional_params,
+              data.frame(
+                Parameter = "One-way parametric strategy",
+                Value = if (is.null(input$oneway_parametric_strategy)) "classical" else input$oneway_parametric_strategy,
+                stringsAsFactors = FALSE
+              )
+            )
           }
           
           additional_params <- data.frame(

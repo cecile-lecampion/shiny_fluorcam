@@ -631,7 +631,8 @@ analyse_barplot <- function(
   data,
     var1, var2, measure_col,
     var1_order = NULL, var2_order = NULL,
-    fill_color = "ivory1", line_color = "darkgrey", point_color = "darkgreen"
+    fill_color = "ivory1", line_color = "darkgrey", point_color = "darkgreen",
+    parametric_strategy = "classical"
 ) {
 
   # ===========================================
@@ -654,6 +655,12 @@ analyse_barplot <- function(
 
   if(!measure_col %in% colnames(data)) {
     stop(paste("Measure column", measure_col, "not found in data"))
+  }
+
+  analysis_keep <- !is.na(data[[var1]]) & !is.na(data[[var2]]) & !is.na(data[[measure_col]])
+  analysis_data <- data[analysis_keep, , drop = FALSE]
+  if (identical(var1, ".AllData") && var1 %in% names(analysis_data)) {
+    analysis_data[[var1]] <- NULL
   }
 
   # ===========================================
@@ -712,6 +719,23 @@ analyse_barplot <- function(
   # STRATEGY: Use helper function for consistent logic
   # PURPOSE: Single decision point for statistical method selection
   flag_normal <- check_normality(shapiro_df)
+  strategy_clean <- if (is.null(parametric_strategy) || !(parametric_strategy %in% c("classical", "welch"))) {
+    "classical"
+  } else {
+    parametric_strategy
+  }
+
+  group_count_df <- data %>%
+    dplyr::group_by(dplyr::across(all_of(c(var2, var1)))) %>%
+    dplyr::summarise(
+      n = sum(!is.na(.data[[measure_col]])),
+      .groups = 'drop'
+    )
+
+  valid_group_counts <- group_count_df$n[group_count_df$n > 0]
+  min_group_n <- if (length(valid_group_counts) > 0) min(valid_group_counts) else NA_integer_
+  max_group_n <- if (length(valid_group_counts) > 0) max(valid_group_counts) else NA_integer_
+  imbalance_ratio <- if (length(valid_group_counts) > 0 && min_group_n > 0) max_group_n / min_group_n else NA_real_
   
   if (flag_normal) {
     # ===========================================
@@ -736,42 +760,89 @@ analyse_barplot <- function(
         .groups = 'drop'
       )
 
-    # ANOVA TESTING - FORMULA APPROACH
-    # STRATEGY: Use formula approach which is more reliable with rstatix
-    # PURPOSE: Test for overall differences before post-hoc testing
-
-    # GENERATE DYNAMIC FORMULA FOR ANOVA
-    # STRATEGY: Programmatically construct formula from variable names
-    # PURPOSE: Flexible function that works with any column names
+    # PARAMETRIC TEST SELECTION
+    # STRATEGY: Optionally switch to Welch when variance heterogeneity is detected
+    # PURPOSE: Better one-way handling for heteroscedastic but approximately normal data
     formule <- as.formula(paste0("`", measure_col, "` ~ `", var2, "`"))
 
-    # GROUP BY FACET VARIABLE AND APPLY ANOVA
-    # STRATEGY: Separate ANOVA for each facet level
-    # PURPOSE: Statistical testing within each experimental condition
-    anova_result <- data %>%
-      group_by(dplyr::across(all_of(var1))) %>%
-      rstatix::anova_test(formule)
+    levene_result <- NULL
+    levene_p_values <- numeric(0)
+    levene_min_p <- NA_real_
+    use_welch <- FALSE
 
-    # TUKEY POST-HOC TESTING - FORMULA APPROACH
-    # STRATEGY: Use formula approach for rstatix compatibility
-    # PURPOSE: Identify which specific groups differ
+    if (identical(strategy_clean, "welch")) {
+      levene_result <- tryCatch({
+        data %>%
+          dplyr::group_by(dplyr::across(all_of(var1))) %>%
+          rstatix::levene_test(formule)
+      }, error = function(e) {
+        NULL
+      })
 
-    # GENERATE DYNAMIC FORMULA FOR TUKEY HSD
-    # STRATEGY: Same formula construction as ANOVA
-    # PURPOSE: Consistent approach across statistical tests
-    formule <- as.formula(paste0("`", measure_col, "` ~ `", var2, "`"))
+      if (!is.null(levene_result) && "p" %in% names(levene_result)) {
+        levene_p_values <- as.numeric(levene_result$p)
+        valid_levene_p <- levene_p_values[!is.na(levene_p_values)]
+        if (length(valid_levene_p) > 0) {
+          levene_min_p <- min(valid_levene_p)
+          use_welch <- any(valid_levene_p <= 0.05)
+        }
+      }
+    }
 
-    # GROUP BY FACET VARIABLE AND APPLY TUKEY TEST
-    # STRATEGY: Separate post-hoc testing for each facet level
-    # PURPOSE: Pairwise comparisons within each experimental condition
-    tukey_results <- data %>%
-      group_by(dplyr::across(all_of(var1))) %>%
-      rstatix::tukey_hsd(formule)
+    anova_result <- NULL
+    tukey_results <- NULL
+    welch_result <- NULL
+    games_howell_results <- NULL
+    decision_reason <- NULL
+    method_used <- NULL
+
+    if (use_welch) {
+      welch_result <- data %>%
+        dplyr::group_by(dplyr::across(all_of(var1))) %>%
+        rstatix::welch_anova_test(formule)
+
+      games_howell_results <- data %>%
+        dplyr::group_by(dplyr::across(all_of(var1))) %>%
+        rstatix::games_howell_test(formule) %>%
+        as.data.frame()
+
+      method_used <- "welch"
+      decision_reason <- paste0(
+        "Variance-robust one-way strategy selected; minimum Levene p-value = ",
+        signif(levene_min_p, 3),
+        ", so Welch ANOVA was used."
+      )
+    } else {
+      anova_result <- data %>%
+        group_by(dplyr::across(all_of(var1))) %>%
+        rstatix::anova_test(formule)
+
+      tukey_results <- data %>%
+        group_by(dplyr::across(all_of(var1))) %>%
+        rstatix::tukey_hsd(formule)
+
+      method_used <- "anova"
+      decision_reason <- if (identical(strategy_clean, "welch") && !is.na(levene_min_p)) {
+        paste0(
+          "Variance-robust one-way strategy selected; minimum Levene p-value = ",
+          signif(levene_min_p, 3),
+          ", so classical one-way ANOVA was retained."
+        )
+      } else if (identical(strategy_clean, "welch")) {
+        "Variance-robust one-way strategy selected, but Levene test was unavailable; classical one-way ANOVA was retained."
+      } else {
+        "Classical one-way strategy selected; one-way ANOVA was used."
+      }
+    }
 
     # COMPACT LETTER DISPLAY
     # STRATEGY: Convert p-values to letter annotations
     # PURPOSE: Visual indication of statistical groupings
-    cld_table_parametric <- generate_cld_parametric(tukey_results, var1, var2)
+    cld_table_parametric <- generate_cld_parametric(
+      if (identical(method_used, "welch")) games_howell_results else tukey_results,
+      var1,
+      var2
+    )
 
     # MERGE SUMMARY WITH CLD
     # STRATEGY: Combine statistical results with summary data
@@ -875,7 +946,20 @@ analyse_barplot <- function(
       normality = flag_normal,
       anova = anova_result,
       tukey = tukey_results,
-      cld = cld_table_parametric
+      welch = welch_result,
+      games_howell = games_howell_results,
+      cld = cld_table_parametric,
+      analysis_data = analysis_data,
+      model = "oneway_anova",
+      method = method_used,
+      decision_mode = strategy_clean,
+      decision_reason = decision_reason,
+      decision_diagnostics = list(
+        levene_p = levene_min_p,
+        min_cell_n = min_group_n,
+        max_cell_n = max_group_n,
+        imbalance_ratio = imbalance_ratio
+      )
     ))
     
   } else {
@@ -1031,7 +1115,22 @@ analyse_barplot <- function(
         normality = flag_normal,
         kruskal = kruskal_pval,
         dunn = pval_dunn,
-        cld = cld_table_nonparametric
+        cld = cld_table_nonparametric,
+        analysis_data = analysis_data,
+        model = "oneway_anova",
+        method = "kruskal",
+        decision_mode = strategy_clean,
+        decision_reason = if (identical(strategy_clean, "welch")) {
+          "Variance-robust one-way strategy selected, but normality was not supported; Kruskal-Wallis was used."
+        } else {
+          "Classical one-way strategy selected, but normality was not supported; Kruskal-Wallis was used."
+        },
+        decision_diagnostics = list(
+          levene_p = NA_real_,
+          min_cell_n = min_group_n,
+          max_cell_n = max_group_n,
+          imbalance_ratio = imbalance_ratio
+        )
       ))
     } else {
       # NO SIGNIFICANT DIFFERENCES CASE
@@ -1084,6 +1183,21 @@ analyse_barplot <- function(
         kruskal = kruskal_pval,
         dunn = NULL,
         cld = NULL,
+        analysis_data = analysis_data,
+        model = "oneway_anova",
+        method = "kruskal",
+        decision_mode = strategy_clean,
+        decision_reason = if (identical(strategy_clean, "welch")) {
+          "Variance-robust one-way strategy selected, but normality was not supported; Kruskal-Wallis was used."
+        } else {
+          "Classical one-way strategy selected, but normality was not supported; Kruskal-Wallis was used."
+        },
+        decision_diagnostics = list(
+          levene_p = NA_real_,
+          min_cell_n = min_group_n,
+          max_cell_n = max_group_n,
+          imbalance_ratio = imbalance_ratio
+        ),
         message = "Data are not significantly different, the Dunn test was not performed."
       ))
     }
@@ -1112,6 +1226,9 @@ analyse_barplot_twoway <- function(
   if (!is.null(facet_var)) {
     required_cols <- c(required_cols, facet_var)
   }
+
+  analysis_keep <- stats::complete.cases(data[, required_cols, drop = FALSE])
+  analysis_data <- data[analysis_keep, , drop = FALSE]
 
   missing_cols <- setdiff(required_cols, colnames(data))
   if (length(missing_cols) > 0) {
@@ -1504,6 +1621,7 @@ analyse_barplot_twoway <- function(
     anova2 = anova_result,
     posthoc = posthoc_result,
     cld = cld_result,
+    analysis_data = analysis_data,
     model = "twoway_anova",
     method = analysis_method,
     decision_mode = decision_info$decision_mode,
@@ -1536,6 +1654,8 @@ analyse_barplot_threeway <- function(
   if (!is.null(facet_var)) {
     required_cols <- c(required_cols, facet_var)
   }
+  analysis_keep <- stats::complete.cases(data[, required_cols, drop = FALSE])
+  analysis_data <- data[analysis_keep, , drop = FALSE]
   missing_cols <- setdiff(required_cols, colnames(data))
   if (length(missing_cols) > 0) {
     stop(paste("Missing columns:", paste(missing_cols, collapse = ", ")))
@@ -1873,6 +1993,7 @@ analyse_barplot_threeway <- function(
     anova3 = anova_result,
     posthoc = posthoc_result,
     cld = cld_result,
+    analysis_data = analysis_data,
     model = "threeway_anova",
     method = analysis_method,
     decision_mode = decision_info$decision_mode,
@@ -2676,6 +2797,7 @@ analyse_curve <- function(df, col_vector,
       qgam_predictions = qgam_preds,     # Model predictions for export
       statistical_results = stat_results, # Statistical test results
       median_points = median_points,     # Summary data points
+      analysis_data = df_clean,
       k_summary = k_summary,
       k_details = curve_k_table
     ))
