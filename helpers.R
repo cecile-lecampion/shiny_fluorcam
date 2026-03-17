@@ -1179,11 +1179,15 @@ analyse_barplot_threeway <- function(
   factor_b,
   factor_c,
   measure_col,
+  facet_var = NULL,
   fill_color = "ivory1",
   line_color = "darkgrey",
   point_color = "darkgreen"
 ) {
   required_cols <- c(factor_a, factor_b, factor_c, measure_col)
+  if (!is.null(facet_var)) {
+    required_cols <- c(required_cols, facet_var)
+  }
   missing_cols <- setdiff(required_cols, colnames(data))
   if (length(missing_cols) > 0) {
     stop(paste("Missing columns:", paste(missing_cols, collapse = ", ")))
@@ -1192,6 +1196,9 @@ analyse_barplot_threeway <- function(
   data[[factor_a]] <- as.factor(data[[factor_a]])
   data[[factor_b]] <- as.factor(data[[factor_b]])
   data[[factor_c]] <- as.factor(data[[factor_c]])
+  if (!is.null(facet_var)) {
+    data[[facet_var]] <- as.factor(data[[facet_var]])
+  }
 
   has_two_levels <- function(df, col, response_col, required_factors) {
     keep <- !is.na(df[[response_col]])
@@ -1202,31 +1209,13 @@ analyse_barplot_threeway <- function(
     length(unique(df_valid[[col]])) >= 2
   }
 
-  if (!has_two_levels(data, factor_a, measure_col, c(factor_a, factor_b, factor_c)) ||
-      !has_two_levels(data, factor_b, measure_col, c(factor_a, factor_b, factor_c)) ||
-      !has_two_levels(data, factor_c, measure_col, c(factor_a, factor_b, factor_c))) {
-    missing_level_factors <- c()
-    if (!has_two_levels(data, factor_a, measure_col, c(factor_a, factor_b, factor_c))) {
-      missing_level_factors <- c(missing_level_factors, factor_a)
-    }
-    if (!has_two_levels(data, factor_b, measure_col, c(factor_a, factor_b, factor_c))) {
-      missing_level_factors <- c(missing_level_factors, factor_b)
-    }
-    if (!has_two_levels(data, factor_c, measure_col, c(factor_a, factor_b, factor_c))) {
-      missing_level_factors <- c(missing_level_factors, factor_c)
-    }
+  required_factors <- c(factor_a, factor_b, factor_c)
 
-    stop(
-      paste0(
-        "Three-way ANOVA requires at least 2 levels for each factor. Insufficient levels for: ",
-        paste(missing_level_factors, collapse = ", "),
-        "."
-      )
-    )
-  }
+  shapiro_groups <- required_factors
+  if (!is.null(facet_var)) shapiro_groups <- c(shapiro_groups, facet_var)
 
   shapiro_df <- data %>%
-    dplyr::group_by(dplyr::across(all_of(c(factor_a, factor_b, factor_c)))) %>%
+    dplyr::group_by(dplyr::across(all_of(shapiro_groups))) %>%
     dplyr::summarise(
       p = tryCatch(stats::shapiro.test(.data[[measure_col]])$p.value, error = function(e) NA_real_),
       .groups = "drop"
@@ -1234,8 +1223,11 @@ analyse_barplot_threeway <- function(
 
   flag_normal <- check_normality(shapiro_df)
 
+  summary_groups <- required_factors
+  if (!is.null(facet_var)) summary_groups <- c(summary_groups, facet_var)
+
   summary_df <- data %>%
-    dplyr::group_by(dplyr::across(all_of(c(factor_a, factor_b, factor_c)))) %>%
+    dplyr::group_by(dplyr::across(all_of(summary_groups))) %>%
     dplyr::summarise(
       N = sum(!is.na(.data[[measure_col]])),
       mean_value = mean(.data[[measure_col]], na.rm = TRUE),
@@ -1249,29 +1241,101 @@ analyse_barplot_threeway <- function(
   formula_th <- stats::as.formula(
     paste0("`", measure_col, "` ~ `", factor_a, "` * `", factor_b, "` * `", factor_c, "`")
   )
-  anova_result <- as.data.frame(rstatix::get_anova_table(rstatix::anova_test(data, formula_th)))
-  class(anova_result) <- "data.frame"
 
   warning_messages <- character()
+
+  if (!is.null(facet_var)) {
+    facet_levels <- unique(as.character(data[[facet_var]]))
+    anova_list <- lapply(facet_levels, function(fv) {
+      subset_df <- data[as.character(data[[facet_var]]) == fv, , drop = FALSE]
+
+      bad_factors <- Filter(
+        function(fac) !has_two_levels(subset_df, fac, measure_col, required_factors),
+        required_factors
+      )
+      if (length(bad_factors) > 0) {
+        warning_messages <<- c(
+          warning_messages,
+          paste0("Facet '", fv, "' skipped: insufficient levels for ", paste(bad_factors, collapse = ", "), ".")
+        )
+        return(NULL)
+      }
+
+      res <- tryCatch(
+        rstatix::anova_test(subset_df, formula_th),
+        error = function(e) {
+          warning_messages <<- c(warning_messages, paste0("Facet '", fv, "' skipped: ", e$message))
+          NULL
+        }
+      )
+      if (is.null(res)) return(NULL)
+
+      res_df <- as.data.frame(rstatix::get_anova_table(res))
+      class(res_df) <- "data.frame"
+      res_df[[facet_var]] <- fv
+      res_df
+    })
+
+    anova_list <- Filter(Negate(is.null), anova_list)
+    if (length(anova_list) == 0) {
+      stop(paste(
+        c("Three-way ANOVA could not be computed for any stratification level.", warning_messages),
+        collapse = " "
+      ))
+    }
+    anova_result <- dplyr::bind_rows(anova_list) %>% dplyr::relocate(all_of(facet_var))
+  } else {
+    bad_factors <- Filter(
+      function(fac) !has_two_levels(data, fac, measure_col, required_factors),
+      required_factors
+    )
+    if (length(bad_factors) > 0) {
+      stop(paste0(
+        "Three-way ANOVA requires at least 2 levels for each factor. Insufficient levels for: ",
+        paste(bad_factors, collapse = ", "), "."
+      ))
+    }
+    anova_result <- as.data.frame(rstatix::get_anova_table(rstatix::anova_test(data, formula_th)))
+    class(anova_result) <- "data.frame"
+  }
+
   posthoc_result <- NULL
   if (requireNamespace("emmeans", quietly = TRUE)) {
-    model_fit <- tryCatch(stats::lm(formula_th, data = data), error = function(e) NULL)
+    if (!is.null(facet_var)) {
+      facet_levels <- unique(as.character(data[[facet_var]]))
+      posthoc_list <- lapply(facet_levels, function(fv) {
+        subset_df <- data[as.character(data[[facet_var]]) == fv, , drop = FALSE]
 
-    if (!is.null(model_fit)) {
-      a_within_bc <- tryCatch(
-        run_emmeans_pairwise(model_fit, target_factor = factor_a, by_factors = c(factor_b, factor_c)),
-        error = function(e) NULL
-      )
-      b_within_ac <- tryCatch(
-        run_emmeans_pairwise(model_fit, target_factor = factor_b, by_factors = c(factor_a, factor_c)),
-        error = function(e) NULL
-      )
-      c_within_ab <- tryCatch(
-        run_emmeans_pairwise(model_fit, target_factor = factor_c, by_factors = c(factor_a, factor_b)),
-        error = function(e) NULL
-      )
+        bad_factors <- Filter(
+          function(fac) !has_two_levels(subset_df, fac, measure_col, required_factors),
+          required_factors
+        )
+        if (length(bad_factors) > 0) return(NULL)
 
-      posthoc_result <- dplyr::bind_rows(a_within_bc, b_within_ac, c_within_ab)
+        model_fit <- tryCatch(stats::lm(formula_th, data = subset_df), error = function(e) NULL)
+        if (is.null(model_fit)) return(NULL)
+
+        a_within_bc <- tryCatch(run_emmeans_pairwise(model_fit, factor_a, c(factor_b, factor_c)), error = function(e) NULL)
+        b_within_ac <- tryCatch(run_emmeans_pairwise(model_fit, factor_b, c(factor_a, factor_c)), error = function(e) NULL)
+        c_within_ab <- tryCatch(run_emmeans_pairwise(model_fit, factor_c, c(factor_a, factor_b)), error = function(e) NULL)
+
+        combined <- dplyr::bind_rows(a_within_bc, b_within_ac, c_within_ab)
+        if (nrow(combined) == 0) return(NULL)
+        combined[[facet_var]] <- fv
+        combined
+      })
+      posthoc_list <- Filter(Negate(is.null), posthoc_list)
+      if (length(posthoc_list) > 0) {
+        posthoc_result <- dplyr::bind_rows(posthoc_list) %>% dplyr::relocate(all_of(facet_var))
+      }
+    } else {
+      model_fit <- tryCatch(stats::lm(formula_th, data = data), error = function(e) NULL)
+      if (!is.null(model_fit)) {
+        a_within_bc <- tryCatch(run_emmeans_pairwise(model_fit, factor_a, c(factor_b, factor_c)), error = function(e) NULL)
+        b_within_ac <- tryCatch(run_emmeans_pairwise(model_fit, factor_b, c(factor_a, factor_c)), error = function(e) NULL)
+        c_within_ab <- tryCatch(run_emmeans_pairwise(model_fit, factor_c, c(factor_a, factor_b)), error = function(e) NULL)
+        posthoc_result <- dplyr::bind_rows(a_within_bc, b_within_ac, c_within_ab)
+      }
     }
   } else {
     warning_messages <- c(
@@ -1329,12 +1393,20 @@ analyse_barplot_threeway <- function(
       strip.background = element_blank(),
       strip.placement = "outside"
     ) +
-    facet_wrap(as.formula(paste("~", factor_c)), nrow = 1, scales = "free_y") +
     labs(
       x = factor_b,
       y = paste0(measure_col, " (mean)"),
       fill = factor_a
     )
+
+  if (!is.null(facet_var)) {
+    p <- p + facet_grid(
+      as.formula(paste0("`", facet_var, "` ~ `", factor_c, "`")),
+      scales = "free_y"
+    )
+  } else {
+    p <- p + facet_wrap(as.formula(paste("~", factor_c)), nrow = 1, scales = "free_y")
+  }
 
   return(list(
     plot = p,

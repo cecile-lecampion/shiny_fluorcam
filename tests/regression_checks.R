@@ -171,4 +171,31 @@ if (requireNamespace("emmeans", quietly = TRUE)) {
   )
 }
 
+# Regression 7: Three-way ANOVA with facet_var (stratification) should run per-facet.
+threeway_facet_result <- analyse_barplot_threeway(
+  data = factorial_df,
+  factor_a = "UV",
+  factor_b = "Light",
+  factor_c = "Temp",
+  measure_col = "Fm",
+  facet_var = "Rep"
+)
+
+stopifnot(
+  is.list(threeway_facet_result),
+  identical(threeway_facet_result$model, "threeway_anova"),
+  !is.null(threeway_facet_result$anova3),
+  nrow(threeway_facet_result$anova3) > 0,
+  "Rep" %in% names(threeway_facet_result$anova3),
+  !is.null(threeway_facet_result$plot)
+)
+
+if (requireNamespace("emmeans", quietly = TRUE)) {
+  stopifnot(
+    !is.null(threeway_facet_result$posthoc),
+    nrow(threeway_facet_result$posthoc) > 0,
+    "Rep" %in% names(threeway_facet_result$posthoc)
+  )
+}
+
 cat("All regression checks passed.\n")

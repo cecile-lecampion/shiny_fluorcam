@@ -133,6 +133,20 @@ Detailed step-by-step usage instructions are available in the **help.md** docume
 - Export procedures
 - Troubleshooting common issues
 
+## Design Check (Two-way and Three-way ANOVA)
+
+For bar plot analyses using multi-factor ANOVA, the app displays a **Design Check** table before running the model.
+
+- **Two-way ANOVA**: counts are shown for each Stratification / Facet variable x Factor A x Factor B combination.
+- **Three-way ANOVA**: counts are shown for each Stratification / Facet variable x Factor A x Factor B x Factor C combination.
+- Counts are computed only on **complete rows** (response and selected factors all non-missing).
+
+The table includes a `Status` column:
+- `OK`: each facet has at least 2 observed levels for all required factors.
+- `Insufficient levels`: at least one factor has fewer than 2 observed levels in that facet.
+
+This diagnostic helps identify empty/sparse cells and explains why some stratification levels may be skipped during ANOVA and post-hoc computation.
+
 # Sample Data
 Sample FluorCam `.TXT` files for testing and demonstration purposes can be found in the `sample_data/` directory within the application folder. Users are encouraged to utilize these files to familiarize themselves with the application's features and functionalities.  
 > Currently, only PSI FluorCam `.TXT` files are supported.

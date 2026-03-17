@@ -774,7 +774,7 @@ server <- function(input, output, session) {
         )
       ),
       conditionalPanel(
-        condition = "input.stat_model == 'oneway_anova' || input.stat_model == 'twoway_anova'",
+        condition = "input.stat_model == 'oneway_anova' || input.stat_model == 'twoway_anova' || input.stat_model == 'threeway_anova'",
         selectInput(
           "bar_facet_var",
           "Stratification / Facet variable (optional)",
@@ -785,26 +785,34 @@ server <- function(input, output, session) {
     )
   })
 
-  # TWO-WAY DESIGN DIAGNOSTIC UI (BAR PLOT)
+  # TWO/THREE-WAY DESIGN DIAGNOSTIC UI (BAR PLOT)
   # STRATEGY: Show analyzable combinations before running ANOVA
   # PURPOSE: Help users identify facets with insufficient levels
   output$bar_design_diagnostic_ui <- renderUI({
     req(result_df$data)
     req(input$graph_type == "Bar plot")
 
-    if (!identical(input$stat_model, "twoway_anova")) {
+    if (!identical(input$stat_model, "twoway_anova") && !identical(input$stat_model, "threeway_anova")) {
       return(NULL)
+    }
+
+    is_threeway <- identical(input$stat_model, "threeway_anova")
+    title_text <- if (is_threeway) "Three-way design check" else "Two-way design check"
+    level_text <- if (is_threeway) {
+      "Status is OK only when each facet has at least 2 levels in A, B and C."
+    } else {
+      "Status is OK only when each facet has at least 2 levels in A and 2 levels in B."
     }
 
     tagList(
       div(
         class = "alert alert-info",
         style = "margin-top: 10px; margin-bottom: 10px;",
-        strong("Two-way design check"),
+        strong(title_text),
         tags$br(),
-        "Counts are computed on complete rows (response, factor A and factor B all non-missing).",
+        "Counts are computed on complete rows (response and selected factors all non-missing).",
         tags$br(),
-        "Status is OK only when each facet has at least 2 levels in A and 2 levels in B."
+        level_text
       ),
       tableOutput("bar_design_diagnostic")
     )
@@ -813,38 +821,64 @@ server <- function(input, output, session) {
   bar_design_diagnostic_data <- reactive({
     req(result_df$data)
     req(input$graph_type == "Bar plot")
-    req(identical(input$stat_model, "twoway_anova"))
+    req(identical(input$stat_model, "twoway_anova") || identical(input$stat_model, "threeway_anova"))
     req(input$bar_factor_a)
     req(input$bar_factor_b)
     req(length(VALUE()) >= 1)
 
+    is_threeway <- identical(input$stat_model, "threeway_anova")
+
     measure_col <- VALUE()[1]
     factor_a <- input$bar_factor_a
     factor_b <- input$bar_factor_b
+    factor_c <- if (is_threeway) input$bar_factor_c else NULL
     facet_col <- if (!is.null(input$bar_facet_var) && input$bar_facet_var != "None") input$bar_facet_var else NULL
 
     req(all(c(factor_a, factor_b, measure_col) %in% names(result_df$data)))
+    if (is_threeway) {
+      req(factor_c)
+      req(factor_c %in% names(result_df$data))
+    }
     if (!is.null(facet_col)) {
       req(facet_col %in% names(result_df$data))
     }
 
-    diagnostic_df <- data.frame(
-      facet = if (is.null(facet_col)) "All data" else as.character(result_df$data[[facet_col]]),
-      factor_a = as.character(result_df$data[[factor_a]]),
-      factor_b = as.character(result_df$data[[factor_b]]),
-      response = suppressWarnings(as.numeric(result_df$data[[measure_col]])),
-      stringsAsFactors = FALSE
-    )
+    diagnostic_df <- data.frame(stringsAsFactors = FALSE)
+    diagnostic_df$facet <- if (is.null(facet_col)) "All data" else as.character(result_df$data[[facet_col]])
+    diagnostic_df$factor_a <- as.character(result_df$data[[factor_a]])
+    diagnostic_df$factor_b <- as.character(result_df$data[[factor_b]])
+    if (is_threeway) {
+      diagnostic_df$factor_c <- as.character(result_df$data[[factor_c]])
+    }
+    diagnostic_df$response <- suppressWarnings(as.numeric(result_df$data[[measure_col]]))
 
-    diagnostic_df <- diagnostic_df[
-      !is.na(diagnostic_df$facet) &
-      !is.na(diagnostic_df$factor_a) &
-      !is.na(diagnostic_df$factor_b) &
-      !is.na(diagnostic_df$response),
-      , drop = FALSE
-    ]
+    required_not_na <- c("facet", "factor_a", "factor_b", "response")
+    if (is_threeway) {
+      required_not_na <- c(required_not_na, "factor_c")
+    }
+    keep <- rep(TRUE, nrow(diagnostic_df))
+    for (col in required_not_na) {
+      keep <- keep & !is.na(diagnostic_df[[col]])
+    }
+
+    diagnostic_df <- diagnostic_df[keep, , drop = FALSE]
 
     if (nrow(diagnostic_df) == 0) {
+      if (is_threeway) {
+        return(data.frame(
+          Facet = "No complete rows",
+          Level_A = "",
+          Level_B = "",
+          Level_C = "",
+          n = 0,
+          Levels_A = 0,
+          Levels_B = 0,
+          Levels_C = 0,
+          Status = "Insufficient levels",
+          stringsAsFactors = FALSE
+        ))
+      }
+
       return(data.frame(
         Facet = "No complete rows",
         Level_A = "",
@@ -855,6 +889,42 @@ server <- function(input, output, session) {
         Status = "Insufficient levels",
         stringsAsFactors = FALSE
       ))
+    }
+
+    if (is_threeway) {
+      counts_df <- diagnostic_df %>%
+        dplyr::count(facet, factor_a, factor_b, factor_c, name = "n") %>%
+        tidyr::complete(facet, factor_a, factor_b, factor_c, fill = list(n = 0))
+
+      levels_a_df <- counts_df %>%
+        dplyr::group_by(facet, factor_a) %>%
+        dplyr::summarise(total = sum(n), .groups = "drop") %>%
+        dplyr::group_by(facet) %>%
+        dplyr::summarise(Levels_A = sum(total > 0), .groups = "drop")
+
+      levels_b_df <- counts_df %>%
+        dplyr::group_by(facet, factor_b) %>%
+        dplyr::summarise(total = sum(n), .groups = "drop") %>%
+        dplyr::group_by(facet) %>%
+        dplyr::summarise(Levels_B = sum(total > 0), .groups = "drop")
+
+      levels_c_df <- counts_df %>%
+        dplyr::group_by(facet, factor_c) %>%
+        dplyr::summarise(total = sum(n), .groups = "drop") %>%
+        dplyr::group_by(facet) %>%
+        dplyr::summarise(Levels_C = sum(total > 0), .groups = "drop")
+
+      summary_df <- counts_df %>%
+        dplyr::left_join(levels_a_df, by = "facet") %>%
+        dplyr::left_join(levels_b_df, by = "facet") %>%
+        dplyr::left_join(levels_c_df, by = "facet") %>%
+        dplyr::mutate(
+          Status = ifelse(Levels_A >= 2 & Levels_B >= 2 & Levels_C >= 2, "OK", "Insufficient levels")
+        ) %>%
+        dplyr::arrange(facet, factor_a, factor_b, factor_c)
+
+      names(summary_df) <- c("Facet", "Level_A", "Level_B", "Level_C", "n", "Levels_A", "Levels_B", "Levels_C", "Status")
+      return(summary_df)
     }
 
     counts_df <- diagnostic_df %>%
@@ -1475,6 +1545,7 @@ server <- function(input, output, session) {
           factor_b = input$bar_factor_b,
           factor_c = input$bar_factor_c,
           measure_col = VALUE()[1],
+          facet_var = bar_facet_var,
           fill_color = input$fill_color,
           line_color = input$line_color,
           point_color = input$point_color
