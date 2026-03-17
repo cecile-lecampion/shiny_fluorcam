@@ -39,12 +39,13 @@ required_packages <- c(
   "zip",                      # Archive creation - USED: server.R (export functionality)
 
   # ===========================================
-  # STATISTICAL ANALYSIS (5 packages)
+  # STATISTICAL ANALYSIS (6 packages)
   # ===========================================
   "rstatix",                  # Statistical tests - USED: helpers.R (shapiro_test, anova_test, tukey_hsd, etc.)
   "rcompanion",               # Statistical functions - USED: helpers.R (groupwiseMedian)
   "multcompView",             # Compact letter display - USED: helpers.R (multcompLetters)
   "emmeans",                  # Estimated marginal means - USED: helpers.R (two-way/three-way post-hoc)
+  "ARTool",                   # Aligned rank transform - USED: helpers.R (two-way/three-way non-parametric fallback)
   "Rmisc",                    # Summary statistics - USED: helpers.R (summarySE)
 
   # ===========================================

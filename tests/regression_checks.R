@@ -198,4 +198,77 @@ if (requireNamespace("emmeans", quietly = TRUE)) {
   )
 }
 
+# Regression 8: Non-normal two-way data should fall back to ART when available.
+if (requireNamespace("ARTool", quietly = TRUE)) {
+  art_df <- expand.grid(
+    FactorA = c("A1", "A2"),
+    FactorB = c("B1", "B2"),
+    Rep = seq_len(8),
+    stringsAsFactors = FALSE
+  )
+  art_df$Response <- c(
+    0, 0, 0, 0, 0, 100, 100, 100,
+    0, 0, 0, 0, 0, 120, 120, 120,
+    10, 10, 10, 10, 10, 140, 140, 140,
+    15, 15, 15, 15, 15, 160, 160, 160
+  )
+
+  art_result <- analyse_barplot_twoway(
+    data = art_df,
+    factor_a = "FactorA",
+    factor_b = "FactorB",
+    measure_col = "Response"
+  )
+
+  stopifnot(
+    is.list(art_result),
+    identical(art_result$model, "twoway_anova"),
+    identical(art_result$method, "art"),
+    identical(art_result$normality, FALSE),
+    !is.null(art_result$anova2),
+    nrow(art_result$anova2) > 0,
+    !is.null(art_result$plot)
+  )
+}
+
+# Regression 9: Non-normal three-way data should fall back to ART when available.
+if (requireNamespace("ARTool", quietly = TRUE)) {
+  # Explicit structure: 8 groups (A×B×C), 4 reps each — extreme outliers per group
+  # ensure Shapiro-Wilk fails, triggering the ART fallback path.
+  art3_df <- data.frame(
+    FactorA = rep(c("A1", "A1", "A1", "A1", "A2", "A2", "A2", "A2"), each = 4),
+    FactorB = rep(c("B1", "B1", "B2", "B2", "B1", "B1", "B2", "B2"), each = 4),
+    FactorC = rep(c("C1", "C2", "C1", "C2", "C1", "C2", "C1", "C2"), each = 4),
+    Response = c(
+      0, 0, 0, 200,    # A1 B1 C1
+      0, 0, 0, 220,    # A1 B1 C2
+      10, 10, 10, 240, # A1 B2 C1
+      15, 15, 15, 260, # A1 B2 C2
+      0, 0, 0, 200,    # A2 B1 C1
+      0, 0, 0, 220,    # A2 B1 C2
+      10, 10, 10, 240, # A2 B2 C1
+      15, 15, 15, 260  # A2 B2 C2
+    ),
+    stringsAsFactors = FALSE
+  )
+
+  art3_result <- analyse_barplot_threeway(
+    data = art3_df,
+    factor_a = "FactorA",
+    factor_b = "FactorB",
+    factor_c = "FactorC",
+    measure_col = "Response"
+  )
+
+  stopifnot(
+    is.list(art3_result),
+    identical(art3_result$model, "threeway_anova"),
+    identical(art3_result$method, "art"),
+    identical(art3_result$normality, FALSE),
+    !is.null(art3_result$anova3),
+    nrow(art3_result$anova3) > 0,
+    !is.null(art3_result$plot)
+  )
+}
+
 cat("All regression checks passed.\n")

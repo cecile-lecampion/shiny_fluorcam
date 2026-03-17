@@ -1649,7 +1649,9 @@ server <- function(input, output, session) {
       # STRATEGY: Display normality test results to user
       # PURPOSE: Inform statistical approach taken in analysis
       output$normality_text <- renderText({
-        if (isTRUE(flag_normal)) {
+        if (!is.null(barplot_results$method) && identical(barplot_results$method, "art")) {
+          "Datas don't follow a normal law. ART non-parametric factorial model used"
+        } else if (isTRUE(flag_normal)) {
           "Datas follow a normal law"
         } else if (isFALSE(flag_normal)) {
           "Datas don't follow a normal law"
@@ -1925,13 +1927,25 @@ server <- function(input, output, session) {
           
           # Determine statistical test used
           statistical_test <- if (!is.null(stats_data$model) && stats_data$model == "threeway_anova") {
-            if (!is.null(stats_data$posthoc) && nrow(stats_data$posthoc) > 0) {
+            if (!is.null(stats_data$method) && identical(stats_data$method, "art")) {
+              if (!is.null(stats_data$posthoc) && nrow(stats_data$posthoc) > 0) {
+                "Three-way ART + emmeans post-hoc"
+              } else {
+                "Three-way ART"
+              }
+            } else if (!is.null(stats_data$posthoc) && nrow(stats_data$posthoc) > 0) {
               "Three-way ANOVA + emmeans post-hoc"
             } else {
               "Three-way ANOVA"
             }
           } else if (!is.null(stats_data$model) && stats_data$model == "twoway_anova") {
-            if (!is.null(stats_data$posthoc) && nrow(stats_data$posthoc) > 0) {
+            if (!is.null(stats_data$method) && identical(stats_data$method, "art")) {
+              if (!is.null(stats_data$posthoc) && nrow(stats_data$posthoc) > 0) {
+                "Two-way ART + emmeans post-hoc"
+              } else {
+                "Two-way ART"
+              }
+            } else if (!is.null(stats_data$posthoc) && nrow(stats_data$posthoc) > 0) {
               "Two-way ANOVA + emmeans post-hoc"
             } else {
               "Two-way ANOVA"

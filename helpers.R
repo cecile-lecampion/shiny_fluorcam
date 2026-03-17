@@ -239,10 +239,12 @@ check_normality <- function(shapiro_df) {
   # STRATEGY: Break on first non-normal group for efficiency
   # PURPOSE: Single failure invalidates parametric assumptions
   for (i in seq_len(nrow(shapiro_df))) {
-    if (shapiro_df$p[i] <= 0.05) {
+    current_p <- shapiro_df$p[i]
+
+    if (is.na(current_p) || current_p <= 0.05) {
       # CRITICAL DECISION POINT
-      # STRATEGY: Strict alpha = 0.05 threshold for normality
-      # PURPOSE: Conservative approach ensures valid statistical inference
+      # STRATEGY: Treat missing p-values conservatively as assumption failure
+      # PURPOSE: Avoid invalid parametric inference when normality could not be assessed
       flag_normal <- FALSE
       break  # Exit immediately - no need to check remaining groups
     }
@@ -276,6 +278,67 @@ run_emmeans_pairwise <- function(model, target_factor, by_factors = NULL, adjust
   pairwise_df$target_factor <- target_factor
   pairwise_df$conditioned_on <- conditioning
   pairwise_df
+}
+
+run_art_emmeans_pairwise <- function(art_model, effect_term, target_factor, by_factors = NULL, adjust = "holm") {
+  if (!requireNamespace("ARTool", quietly = TRUE)) {
+    return(NULL)
+  }
+
+  term_model <- tryCatch(ARTool::artlm(art_model, effect_term), error = function(e) NULL)
+  if (is.null(term_model)) {
+    return(NULL)
+  }
+
+  run_emmeans_pairwise(
+    model = term_model,
+    target_factor = target_factor,
+    by_factors = by_factors,
+    adjust = adjust
+  )
+}
+
+format_art_anova_table <- function(art_model) {
+  anova_df <- as.data.frame(stats::anova(art_model))
+  if (nrow(anova_df) == 0) {
+    return(anova_df)
+  }
+
+  anova_df$Effect <- rownames(anova_df)
+  rownames(anova_df) <- NULL
+  anova_df <- dplyr::relocate(anova_df, Effect)
+  class(anova_df) <- "data.frame"
+  anova_df
+}
+
+summarise_factorial_response <- function(data, group_cols, measure_col, flag_normal = TRUE) {
+  if (flag_normal) {
+    return(
+      data %>%
+        dplyr::group_by(dplyr::across(all_of(group_cols))) %>%
+        dplyr::summarise(
+          N = sum(!is.na(.data[[measure_col]])),
+          mean_value = mean(.data[[measure_col]], na.rm = TRUE),
+          sd_value = stats::sd(.data[[measure_col]], na.rm = TRUE),
+          se = ifelse(N > 0, sd_value / sqrt(N), NA_real_),
+          ci_lower = mean_value - se * stats::qt(0.975, df = pmax(N - 1, 1)),
+          ci_upper = mean_value + se * stats::qt(0.975, df = pmax(N - 1, 1)),
+          .groups = "drop"
+        )
+    )
+  }
+
+  data %>%
+    dplyr::group_by(dplyr::across(all_of(group_cols))) %>%
+    dplyr::summarise(
+      N = sum(!is.na(.data[[measure_col]])),
+      mean_value = stats::median(.data[[measure_col]], na.rm = TRUE),
+      sd_value = NA_real_,
+      se = NA_real_,
+      ci_lower = stats::quantile(.data[[measure_col]], 0.025, na.rm = TRUE),
+      ci_upper = stats::quantile(.data[[measure_col]], 0.975, na.rm = TRUE),
+      .groups = "drop"
+    )
 }
 
 # Convert emmeans pairwise contrasts to CLD letters
@@ -989,17 +1052,8 @@ analyse_barplot_twoway <- function(
     summary_groups <- c(summary_groups, facet_var)
   }
 
-  summary_df <- data %>%
-    dplyr::group_by(dplyr::across(all_of(summary_groups))) %>%
-    dplyr::summarise(
-      N = sum(!is.na(.data[[measure_col]])),
-      mean_value = mean(.data[[measure_col]], na.rm = TRUE),
-      sd_value = stats::sd(.data[[measure_col]], na.rm = TRUE),
-      se = ifelse(N > 0, sd_value / sqrt(N), NA_real_),
-      ci_lower = mean_value - se * stats::qt(0.975, df = pmax(N - 1, 1)),
-      ci_upper = mean_value + se * stats::qt(0.975, df = pmax(N - 1, 1)),
-      .groups = "drop"
-    )
+  summary_df <- summarise_factorial_response(data, summary_groups, measure_col, flag_normal)
+  summary_label <- if (flag_normal) "mean" else "median"
 
   formula_tw <- stats::as.formula(paste0("`", measure_col, "` ~ `", factor_a, "` * `", factor_b, "`"))
 
@@ -1037,6 +1091,16 @@ analyse_barplot_twoway <- function(
   }
 
   warning_messages <- character()
+  analysis_method <- if (flag_normal) "anova" else "art"
+
+  if (!flag_normal) {
+    warning_messages <- c(
+      warning_messages,
+      "Normality assumption not met: used aligned rank transform (ART) non-parametric factorial model."
+    )
+  }
+
+  interaction_term <- paste(factor_a, factor_b, sep = ":")
 
   if (!is.null(facet_var)) {
     facet_levels <- unique(as.character(data[[facet_var]]))
@@ -1049,22 +1113,46 @@ analyse_barplot_twoway <- function(
         return(NULL)
       }
 
-      res <- tryCatch(
-        rstatix::anova_test(subset_df, formula_tw),
-        error = function(e) {
-          warning_messages <<- c(
-            warning_messages,
-            paste0("Facet '", fv, "' skipped: ", e$message)
-          )
-          NULL
-        }
-      )
+      if (flag_normal) {
+        res <- tryCatch(
+          rstatix::anova_test(subset_df, formula_tw),
+          error = function(e) {
+            warning_messages <<- c(
+              warning_messages,
+              paste0("Facet '", fv, "' skipped: ", e$message)
+            )
+            NULL
+          }
+        )
 
-      if (is.null(res)) {
-        return(NULL)
+        if (is.null(res)) {
+          return(NULL)
+        }
+
+        res_df <- as.data.frame(rstatix::get_anova_table(res))
+      } else {
+        if (!requireNamespace("ARTool", quietly = TRUE)) {
+          stop("Non-parametric two-way analysis requires package 'ARTool'.")
+        }
+
+        art_model <- tryCatch(
+          ARTool::art(formula_tw, data = subset_df),
+          error = function(e) {
+            warning_messages <<- c(
+              warning_messages,
+              paste0("Facet '", fv, "' skipped: ", e$message)
+            )
+            NULL
+          }
+        )
+
+        if (is.null(art_model)) {
+          return(NULL)
+        }
+
+        res_df <- format_art_anova_table(art_model)
       }
 
-      res_df <- as.data.frame(rstatix::get_anova_table(res))
       class(res_df) <- "data.frame"
       res_df[[facet_var]] <- fv
       res_df
@@ -1075,7 +1163,7 @@ analyse_barplot_twoway <- function(
       stop(
         paste(
           c(
-            "Two-way ANOVA could not be computed for any stratification level.",
+            "Two-way analysis could not be computed for any stratification level.",
             warning_messages
           ),
           collapse = " "
@@ -1091,7 +1179,15 @@ analyse_barplot_twoway <- function(
         !has_two_levels(subset_df, factor_b, measure_col, c(factor_a, factor_b))) {
       stop(build_level_issue())
     }
-    anova_result <- as.data.frame(rstatix::get_anova_table(rstatix::anova_test(data, formula_tw)))
+
+    if (flag_normal) {
+      anova_result <- as.data.frame(rstatix::get_anova_table(rstatix::anova_test(data, formula_tw)))
+    } else {
+      if (!requireNamespace("ARTool", quietly = TRUE)) {
+        stop("Non-parametric two-way analysis requires package 'ARTool'.")
+      }
+      anova_result <- format_art_anova_table(ARTool::art(formula_tw, data = data))
+    }
     class(anova_result) <- "data.frame"
   }
 
@@ -1108,19 +1204,35 @@ analyse_barplot_twoway <- function(
           return(NULL)
         }
 
-        model_fit <- tryCatch(stats::lm(formula_tw, data = subset_df), error = function(e) NULL)
-        if (is.null(model_fit)) {
-          return(NULL)
-        }
+        if (flag_normal) {
+          model_fit <- tryCatch(stats::lm(formula_tw, data = subset_df), error = function(e) NULL)
+          if (is.null(model_fit)) {
+            return(NULL)
+          }
 
-        a_within_b <- tryCatch(
-          run_emmeans_pairwise(model_fit, target_factor = factor_a, by_factors = c(factor_b)),
-          error = function(e) NULL
-        )
-        b_within_a <- tryCatch(
-          run_emmeans_pairwise(model_fit, target_factor = factor_b, by_factors = c(factor_a)),
-          error = function(e) NULL
-        )
+          a_within_b <- tryCatch(
+            run_emmeans_pairwise(model_fit, target_factor = factor_a, by_factors = c(factor_b)),
+            error = function(e) NULL
+          )
+          b_within_a <- tryCatch(
+            run_emmeans_pairwise(model_fit, target_factor = factor_b, by_factors = c(factor_a)),
+            error = function(e) NULL
+          )
+        } else {
+          art_model <- tryCatch(ARTool::art(formula_tw, data = subset_df), error = function(e) NULL)
+          if (is.null(art_model)) {
+            return(NULL)
+          }
+
+          a_within_b <- tryCatch(
+            run_art_emmeans_pairwise(art_model, interaction_term, factor_a, c(factor_b), adjust = "holm"),
+            error = function(e) NULL
+          )
+          b_within_a <- tryCatch(
+            run_art_emmeans_pairwise(art_model, interaction_term, factor_b, c(factor_a), adjust = "holm"),
+            error = function(e) NULL
+          )
+        }
 
         combined <- dplyr::bind_rows(a_within_b, b_within_a)
         if (nrow(combined) == 0) {
@@ -1136,17 +1248,32 @@ analyse_barplot_twoway <- function(
         posthoc_result <- dplyr::bind_rows(posthoc_list) %>% dplyr::relocate(all_of(facet_var))
       }
     } else {
-      model_fit <- tryCatch(stats::lm(formula_tw, data = data), error = function(e) NULL)
-      if (!is.null(model_fit)) {
-        a_within_b <- tryCatch(
-          run_emmeans_pairwise(model_fit, target_factor = factor_a, by_factors = c(factor_b)),
-          error = function(e) NULL
-        )
-        b_within_a <- tryCatch(
-          run_emmeans_pairwise(model_fit, target_factor = factor_b, by_factors = c(factor_a)),
-          error = function(e) NULL
-        )
-        posthoc_result <- dplyr::bind_rows(a_within_b, b_within_a)
+      if (flag_normal) {
+        model_fit <- tryCatch(stats::lm(formula_tw, data = data), error = function(e) NULL)
+        if (!is.null(model_fit)) {
+          a_within_b <- tryCatch(
+            run_emmeans_pairwise(model_fit, target_factor = factor_a, by_factors = c(factor_b)),
+            error = function(e) NULL
+          )
+          b_within_a <- tryCatch(
+            run_emmeans_pairwise(model_fit, target_factor = factor_b, by_factors = c(factor_a)),
+            error = function(e) NULL
+          )
+          posthoc_result <- dplyr::bind_rows(a_within_b, b_within_a)
+        }
+      } else {
+        art_model <- tryCatch(ARTool::art(formula_tw, data = data), error = function(e) NULL)
+        if (!is.null(art_model)) {
+          a_within_b <- tryCatch(
+            run_art_emmeans_pairwise(art_model, interaction_term, factor_a, c(factor_b), adjust = "holm"),
+            error = function(e) NULL
+          )
+          b_within_a <- tryCatch(
+            run_art_emmeans_pairwise(art_model, interaction_term, factor_b, c(factor_a), adjust = "holm"),
+            error = function(e) NULL
+          )
+          posthoc_result <- dplyr::bind_rows(a_within_b, b_within_a)
+        }
       }
     }
   } else {
@@ -1250,7 +1377,7 @@ analyse_barplot_twoway <- function(
     ) +
     labs(
       x = factor_b,
-      y = paste0(measure_col, " (mean)"),
+      y = paste0(measure_col, " (", summary_label, ")"),
       fill = factor_a
     )
 
@@ -1279,6 +1406,7 @@ analyse_barplot_twoway <- function(
     posthoc = posthoc_result,
     cld = cld_result,
     model = "twoway_anova",
+    method = analysis_method,
     message = if (length(warning_messages) > 0) paste(unique(warning_messages), collapse = " ") else NULL
   ))
 }
@@ -1343,23 +1471,24 @@ analyse_barplot_threeway <- function(
   summary_groups <- required_factors
   if (!is.null(facet_var)) summary_groups <- c(summary_groups, facet_var)
 
-  summary_df <- data %>%
-    dplyr::group_by(dplyr::across(all_of(summary_groups))) %>%
-    dplyr::summarise(
-      N = sum(!is.na(.data[[measure_col]])),
-      mean_value = mean(.data[[measure_col]], na.rm = TRUE),
-      sd_value = stats::sd(.data[[measure_col]], na.rm = TRUE),
-      se = ifelse(N > 0, sd_value / sqrt(N), NA_real_),
-      ci_lower = mean_value - se * stats::qt(0.975, df = pmax(N - 1, 1)),
-      ci_upper = mean_value + se * stats::qt(0.975, df = pmax(N - 1, 1)),
-      .groups = "drop"
-    )
+  summary_df <- summarise_factorial_response(data, summary_groups, measure_col, flag_normal)
+  summary_label <- if (flag_normal) "mean" else "median"
 
   formula_th <- stats::as.formula(
     paste0("`", measure_col, "` ~ `", factor_a, "` * `", factor_b, "` * `", factor_c, "`")
   )
 
   warning_messages <- character()
+  analysis_method <- if (flag_normal) "anova" else "art"
+
+  if (!flag_normal) {
+    warning_messages <- c(
+      warning_messages,
+      "Normality assumption not met: used aligned rank transform (ART) non-parametric factorial model."
+    )
+  }
+
+  interaction_term <- paste(factor_a, factor_b, factor_c, sep = ":")
 
   if (!is.null(facet_var)) {
     facet_levels <- unique(as.character(data[[facet_var]]))
@@ -1378,16 +1507,34 @@ analyse_barplot_threeway <- function(
         return(NULL)
       }
 
-      res <- tryCatch(
-        rstatix::anova_test(subset_df, formula_th),
-        error = function(e) {
-          warning_messages <<- c(warning_messages, paste0("Facet '", fv, "' skipped: ", e$message))
-          NULL
-        }
-      )
-      if (is.null(res)) return(NULL)
+      if (flag_normal) {
+        res <- tryCatch(
+          rstatix::anova_test(subset_df, formula_th),
+          error = function(e) {
+            warning_messages <<- c(warning_messages, paste0("Facet '", fv, "' skipped: ", e$message))
+            NULL
+          }
+        )
+        if (is.null(res)) return(NULL)
 
-      res_df <- as.data.frame(rstatix::get_anova_table(res))
+        res_df <- as.data.frame(rstatix::get_anova_table(res))
+      } else {
+        if (!requireNamespace("ARTool", quietly = TRUE)) {
+          stop("Non-parametric three-way analysis requires package 'ARTool'.")
+        }
+
+        art_model <- tryCatch(
+          ARTool::art(formula_th, data = subset_df),
+          error = function(e) {
+            warning_messages <<- c(warning_messages, paste0("Facet '", fv, "' skipped: ", e$message))
+            NULL
+          }
+        )
+        if (is.null(art_model)) return(NULL)
+
+        res_df <- format_art_anova_table(art_model)
+      }
+
       class(res_df) <- "data.frame"
       res_df[[facet_var]] <- fv
       res_df
@@ -1396,7 +1543,7 @@ analyse_barplot_threeway <- function(
     anova_list <- Filter(Negate(is.null), anova_list)
     if (length(anova_list) == 0) {
       stop(paste(
-        c("Three-way ANOVA could not be computed for any stratification level.", warning_messages),
+        c("Three-way analysis could not be computed for any stratification level.", warning_messages),
         collapse = " "
       ))
     }
@@ -1412,7 +1559,14 @@ analyse_barplot_threeway <- function(
         paste(bad_factors, collapse = ", "), "."
       ))
     }
-    anova_result <- as.data.frame(rstatix::get_anova_table(rstatix::anova_test(data, formula_th)))
+    if (flag_normal) {
+      anova_result <- as.data.frame(rstatix::get_anova_table(rstatix::anova_test(data, formula_th)))
+    } else {
+      if (!requireNamespace("ARTool", quietly = TRUE)) {
+        stop("Non-parametric three-way analysis requires package 'ARTool'.")
+      }
+      anova_result <- format_art_anova_table(ARTool::art(formula_th, data = data))
+    }
     class(anova_result) <- "data.frame"
   }
 
@@ -1430,12 +1584,21 @@ analyse_barplot_threeway <- function(
         )
         if (length(bad_factors) > 0) return(NULL)
 
-        model_fit <- tryCatch(stats::lm(formula_th, data = subset_df), error = function(e) NULL)
-        if (is.null(model_fit)) return(NULL)
+        if (flag_normal) {
+          model_fit <- tryCatch(stats::lm(formula_th, data = subset_df), error = function(e) NULL)
+          if (is.null(model_fit)) return(NULL)
 
-        a_within_bc <- tryCatch(run_emmeans_pairwise(model_fit, factor_a, c(factor_b, factor_c)), error = function(e) NULL)
-        b_within_ac <- tryCatch(run_emmeans_pairwise(model_fit, factor_b, c(factor_a, factor_c)), error = function(e) NULL)
-        c_within_ab <- tryCatch(run_emmeans_pairwise(model_fit, factor_c, c(factor_a, factor_b)), error = function(e) NULL)
+          a_within_bc <- tryCatch(run_emmeans_pairwise(model_fit, factor_a, c(factor_b, factor_c)), error = function(e) NULL)
+          b_within_ac <- tryCatch(run_emmeans_pairwise(model_fit, factor_b, c(factor_a, factor_c)), error = function(e) NULL)
+          c_within_ab <- tryCatch(run_emmeans_pairwise(model_fit, factor_c, c(factor_a, factor_b)), error = function(e) NULL)
+        } else {
+          art_model <- tryCatch(ARTool::art(formula_th, data = subset_df), error = function(e) NULL)
+          if (is.null(art_model)) return(NULL)
+
+          a_within_bc <- tryCatch(run_art_emmeans_pairwise(art_model, interaction_term, factor_a, c(factor_b, factor_c), adjust = "holm"), error = function(e) NULL)
+          b_within_ac <- tryCatch(run_art_emmeans_pairwise(art_model, interaction_term, factor_b, c(factor_a, factor_c), adjust = "holm"), error = function(e) NULL)
+          c_within_ab <- tryCatch(run_art_emmeans_pairwise(art_model, interaction_term, factor_c, c(factor_a, factor_b), adjust = "holm"), error = function(e) NULL)
+        }
 
         combined <- dplyr::bind_rows(a_within_bc, b_within_ac, c_within_ab)
         if (nrow(combined) == 0) return(NULL)
@@ -1447,12 +1610,22 @@ analyse_barplot_threeway <- function(
         posthoc_result <- dplyr::bind_rows(posthoc_list) %>% dplyr::relocate(all_of(facet_var))
       }
     } else {
-      model_fit <- tryCatch(stats::lm(formula_th, data = data), error = function(e) NULL)
-      if (!is.null(model_fit)) {
-        a_within_bc <- tryCatch(run_emmeans_pairwise(model_fit, factor_a, c(factor_b, factor_c)), error = function(e) NULL)
-        b_within_ac <- tryCatch(run_emmeans_pairwise(model_fit, factor_b, c(factor_a, factor_c)), error = function(e) NULL)
-        c_within_ab <- tryCatch(run_emmeans_pairwise(model_fit, factor_c, c(factor_a, factor_b)), error = function(e) NULL)
-        posthoc_result <- dplyr::bind_rows(a_within_bc, b_within_ac, c_within_ab)
+      if (flag_normal) {
+        model_fit <- tryCatch(stats::lm(formula_th, data = data), error = function(e) NULL)
+        if (!is.null(model_fit)) {
+          a_within_bc <- tryCatch(run_emmeans_pairwise(model_fit, factor_a, c(factor_b, factor_c)), error = function(e) NULL)
+          b_within_ac <- tryCatch(run_emmeans_pairwise(model_fit, factor_b, c(factor_a, factor_c)), error = function(e) NULL)
+          c_within_ab <- tryCatch(run_emmeans_pairwise(model_fit, factor_c, c(factor_a, factor_b)), error = function(e) NULL)
+          posthoc_result <- dplyr::bind_rows(a_within_bc, b_within_ac, c_within_ab)
+        }
+      } else {
+        art_model <- tryCatch(ARTool::art(formula_th, data = data), error = function(e) NULL)
+        if (!is.null(art_model)) {
+          a_within_bc <- tryCatch(run_art_emmeans_pairwise(art_model, interaction_term, factor_a, c(factor_b, factor_c), adjust = "holm"), error = function(e) NULL)
+          b_within_ac <- tryCatch(run_art_emmeans_pairwise(art_model, interaction_term, factor_b, c(factor_a, factor_c), adjust = "holm"), error = function(e) NULL)
+          c_within_ab <- tryCatch(run_art_emmeans_pairwise(art_model, interaction_term, factor_c, c(factor_a, factor_b), adjust = "holm"), error = function(e) NULL)
+          posthoc_result <- dplyr::bind_rows(a_within_bc, b_within_ac, c_within_ab)
+        }
       }
     }
   } else {
@@ -1556,7 +1729,7 @@ analyse_barplot_threeway <- function(
     ) +
     labs(
       x = factor_b,
-      y = paste0(measure_col, " (mean)"),
+      y = paste0(measure_col, " (", summary_label, ")"),
       fill = factor_a
     )
 
@@ -1590,6 +1763,7 @@ analyse_barplot_threeway <- function(
     posthoc = posthoc_result,
     cld = cld_result,
     model = "threeway_anova",
+    method = analysis_method,
     message = if (length(warning_messages) > 0) paste(unique(warning_messages), collapse = " ") else NULL
   ))
 }

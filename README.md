@@ -24,7 +24,7 @@ Key features include:
 - shiny, shinydashboard (UI framework)
 - ggplot2, ggpubr (visualizations)  
 - mgcv (GAM modeling)
-- multcomp, PMCMRplus, emmeans (statistical testing and post-hoc)
+- multcomp, PMCMRplus, emmeans, ARTool (statistical testing, post-hoc, and factorial non-parametric fallback)
 - DT, readr (data handling)
 
 All dependencies are automatically managed through the `global.R` configuration file in the application directory.
@@ -146,6 +146,44 @@ The table includes a `Status` column:
 - `Insufficient levels`: at least one factor has fewer than 2 observed levels in that facet.
 
 This diagnostic helps identify empty/sparse cells and explains why some stratification levels may be skipped during ANOVA and post-hoc computation.
+
+## Statistical Methods and Normality Assumptions
+
+### One-way analysis
+
+| Condition | Model | Post-hoc |
+|-----------|-------|----------|
+| Normal residuals | One-way ANOVA | Tukey HSD |
+| Non-normal residuals | Kruskal-Wallis | Dunn (Holm correction) |
+
+### Two-way and Three-way analysis
+
+| Condition | Model | Post-hoc |
+|-----------|-------|----------|
+| Normal residuals | ANOVA (`rstatix`) | emmeans pairwise (Tukey) |
+| Non-normal residuals | ART (`ARTool`) | emmeans on ART linear model (Holm) |
+
+### Why ANOVA can be acceptable despite imperfect normality
+
+ANOVA is well known to be **robust to moderate departures from normality** in many practical situations. The key reasons are:
+
+- **Central Limit Theorem**: the sampling distribution of group means converges toward normality as sample size increases, regardless of the underlying distribution. With n ≥ 5–6 observations per group, F-test Type I error remains well-controlled even with asymmetric or slightly heavy-tailed data.
+- **Balanced designs**: when all groups have the same number of observations, ANOVA is particularly robust because the variance estimator is unbiased even under heteroscedasticity.
+- **Sensitivity of normality tests**: Shapiro-Wilk is powerful enough to detect trivial, practically meaningless deviations from normality in large samples, which would cause an unnecessary switch to a less powerful non-parametric test.
+
+As a consequence, in many published studies ANOVA is retained even when a formal normality test flags a violation, provided that residual QQ-plots look reasonable and the design is balanced.
+
+### When the app switches to ART
+
+The application uses a **conservative automatic criterion**: if the Shapiro-Wilk test returns p ≤ 0.05 in **any** group, the two-way or three-way analysis switches to the [Aligned Rank Transform (ART)](https://doi.org/10.1145/1978942.1979007) method.
+
+The switch is also triggered when a group is too small for Shapiro-Wilk to compute a p-value (treated as non-normal by default).
+
+**ART** aligns the response for each effect before ranking, preserving interaction structure. It enables standard emmeans-based post-hoc contrasts on the ranked data, making it a suitable factorial non-parametric alternative to ANOVA.
+
+> **Note**: ART requires a full-rank design (no empty cells, at least 2 observations per cell). Sparse or unbalanced designs may still cause the ART model to fail; in such cases an error is reported and the affected stratification level is skipped.
+
+Summary bars show **mean ± 95 % CI** under the parametric path and **median ± 2.5/97.5 percentile interval** under the non-parametric path.
 
 # Sample Data
 Sample FluorCam `.TXT` files for testing and demonstration purposes can be found in the `sample_data/` directory within the application folder. Users are encouraged to utilize these files to familiarize themselves with the application's features and functionalities.  
