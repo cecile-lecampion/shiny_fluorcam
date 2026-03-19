@@ -139,16 +139,17 @@ In the **Analysis Results** tab, a `Data Filtering` box summarizes how many rows
 
 The statistical ZIP export also includes an `analysis_dataset_used.txt` file containing the exact rows retained for the analysis after required-column filtering and cleaning. This is separate from the manual data-table export, which still lets users choose the columns they want to download.
 
-## Design Check (Two-way and Three-way ANOVA)
+## Design Check (One-way, Two-way and Three-way ANOVA)
 
-For Bar Plot analyses using multi-factor ANOVA, the app displays a **Design Check** table in the **Data Overview** tab before running the model.
+For Bar Plot analyses, the app displays a **Design Check** table in the **Data Overview** tab before running the model.
 
+- **One-way ANOVA**: counts are shown for each Stratification / Facet variable x Factor A combination.
 - **Two-way ANOVA**: counts are shown for each Stratification / Facet variable x Factor A x Factor B combination.
 - **Three-way ANOVA**: counts are shown for each Stratification / Facet variable x Factor A x Factor B x Factor C combination.
 - Counts are computed only on **complete rows** (response and selected factors all non-missing).
 
 The table includes a `Status` column:
-- `OK`: each facet has at least 2 observed levels for all required factors.
+- `OK`: each facet has at least 2 observed levels for all required factors in the selected model.
 - `Insufficient levels`: at least one factor has fewer than 2 observed levels in that facet.
 
 A compact summary row is shown above the table (`Rows`, `Facets`, `OK`, `Insufficient`) to quickly assess whether the design is analyzable.
@@ -255,6 +256,8 @@ Before running Line Chart analysis, the app checks that:
 - measurement parameters (time values) were validated via `Set Measurement Parameters` -> `Validate`
 - a control group is selected
 
+Time mapping now uses exact selected column names (validated in the measurement-parameter step), which supports flexible labels such as `T0`, `T24h`, `D3`, or `Week2`.
+
 If one of these conditions is missing, a clear error notification is shown and analysis does not run.
 
 ### Color presets
@@ -283,6 +286,21 @@ When exporting the displayed plot, the converted version is saved with the suffi
 # Sample Data
 Sample FluorCam `.TXT` files for testing and demonstration purposes can be found in the `sample_data/` directory within the application folder. Users are encouraged to utilize these files to familiarize themselves with the application's features and functionalities.  
 > Currently, only PSI FluorCam `.TXT` files are supported.
+
+Enriched demo packs are available:
+
+- `sample_data/fluorcam_oneway_demo/`: one-way Bar Plot examples (`Batch_Treatment_Rep.TXT`)
+- `sample_data/fluorcam_twoway_demo/`: two-way Bar Plot examples (`Genotype_Dose_Rep.TXT`)
+- `sample_data/fluorcam_threeway_demo/`: three-way Bar Plot examples (`UV_Light_Temp_Rep.TXT`)
+- `sample_data/fluorcam_convert_curve_demo/`: Convert-to-Curve examples with time labels in filenames (`T0`, `T6h`, `T24h`, `T48h`)
+- `sample_data/fluorcam_factorial/`: compact factorial benchmark set
+- `sample_data/fluorcam_PSI/`: original PSI example files
+
+To regenerate the synthetic demo packs, run:
+
+```bash
+Rscript sample_data/generate_enriched_datasets.R
+```
 
 # Contributing
 Contributions to the FluorCam Toolbox are welcome! If you have feature requests or suggestions, feel free to contact us at <a href="mailto:cecile.lecampion@univ-amu.fr">cecile.lecampion@univ-amu.fr</a> or open an issue on the GitHub repository.  

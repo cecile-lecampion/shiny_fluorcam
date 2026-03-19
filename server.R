@@ -864,20 +864,30 @@ server <- function(input, output, session) {
     )
   })
 
-  # TWO/THREE-WAY DESIGN DIAGNOSTIC UI (BAR PLOT)
+  # ONE/TWO/THREE-WAY DESIGN DIAGNOSTIC UI (BAR PLOT)
   # STRATEGY: Show analyzable combinations before running ANOVA
   # PURPOSE: Help users identify facets with insufficient levels
   output$bar_design_diagnostic_ui <- renderUI({
     req(result_df$data)
     req(input$graph_type == "Bar plot")
 
-    if (!identical(input$stat_model, "twoway_anova") && !identical(input$stat_model, "threeway_anova")) {
+    if (!identical(input$stat_model, "oneway_anova") && !identical(input$stat_model, "twoway_anova") && !identical(input$stat_model, "threeway_anova")) {
       return(NULL)
     }
 
+    is_oneway <- identical(input$stat_model, "oneway_anova")
     is_threeway <- identical(input$stat_model, "threeway_anova")
-    title_text <- if (is_threeway) "Three-way design check" else "Two-way design check"
-    level_text <- if (is_threeway) {
+    title_text <- if (is_oneway) {
+      "One-way design check"
+    } else if (is_threeway) {
+      "Three-way design check"
+    } else {
+      "Two-way design check"
+    }
+
+    level_text <- if (is_oneway) {
+      "Status is OK only when each facet has at least 2 levels in A."
+    } else if (is_threeway) {
       "Status is OK only when each facet has at least 2 levels in A, B and C."
     } else {
       "Status is OK only when each facet has at least 2 levels in A and 2 levels in B."
@@ -924,20 +934,24 @@ server <- function(input, output, session) {
   bar_design_diagnostic_data <- reactive({
     req(result_df$data)
     req(input$graph_type == "Bar plot")
-    req(identical(input$stat_model, "twoway_anova") || identical(input$stat_model, "threeway_anova"))
+    req(identical(input$stat_model, "oneway_anova") || identical(input$stat_model, "twoway_anova") || identical(input$stat_model, "threeway_anova"))
     req(input$bar_factor_a)
-    req(input$bar_factor_b)
     req(length(VALUE()) >= 1)
 
+    is_oneway <- identical(input$stat_model, "oneway_anova")
     is_threeway <- identical(input$stat_model, "threeway_anova")
 
     measure_col <- VALUE()[1]
     factor_a <- input$bar_factor_a
-    factor_b <- input$bar_factor_b
+    factor_b <- if (is_oneway) NULL else input$bar_factor_b
     factor_c <- if (is_threeway) input$bar_factor_c else NULL
     facet_col <- if (!is.null(input$bar_facet_var) && input$bar_facet_var != "None") input$bar_facet_var else NULL
 
-    req(all(c(factor_a, factor_b, measure_col) %in% names(result_df$data)))
+    req(all(c(factor_a, measure_col) %in% names(result_df$data)))
+    if (!is_oneway) {
+      req(factor_b)
+      req(factor_b %in% names(result_df$data))
+    }
     if (is_threeway) {
       req(factor_c)
       req(factor_c %in% names(result_df$data))
@@ -949,15 +963,20 @@ server <- function(input, output, session) {
     diagnostic_df <- data.frame(
       facet = if (is.null(facet_col)) rep("All data", nrow(result_df$data)) else as.character(result_df$data[[facet_col]]),
       factor_a = as.character(result_df$data[[factor_a]]),
-      factor_b = as.character(result_df$data[[factor_b]]),
       response = suppressWarnings(as.numeric(result_df$data[[measure_col]])),
       stringsAsFactors = FALSE
     )
+    if (!is_oneway) {
+      diagnostic_df$factor_b <- as.character(result_df$data[[factor_b]])
+    }
     if (is_threeway) {
       diagnostic_df$factor_c <- as.character(result_df$data[[factor_c]])
     }
 
-    required_not_na <- c("facet", "factor_a", "factor_b", "response")
+    required_not_na <- c("facet", "factor_a", "response")
+    if (!is_oneway) {
+      required_not_na <- c(required_not_na, "factor_b")
+    }
     if (is_threeway) {
       required_not_na <- c(required_not_na, "factor_c")
     }
@@ -969,6 +988,17 @@ server <- function(input, output, session) {
     diagnostic_df <- diagnostic_df[keep, , drop = FALSE]
 
     if (nrow(diagnostic_df) == 0) {
+      if (is_oneway) {
+        return(data.frame(
+          Facet = "No complete rows",
+          Level_A = "",
+          n = 0,
+          Levels_A = 0,
+          Status = "Insufficient levels",
+          stringsAsFactors = FALSE
+        ))
+      }
+
       if (is_threeway) {
         return(data.frame(
           Facet = "No complete rows",
@@ -994,6 +1024,28 @@ server <- function(input, output, session) {
         Status = "Insufficient levels",
         stringsAsFactors = FALSE
       ))
+    }
+
+    if (is_oneway) {
+      counts_df <- diagnostic_df %>%
+        dplyr::count(facet, factor_a, name = "n") %>%
+        tidyr::complete(facet, factor_a, fill = list(n = 0))
+
+      levels_a_df <- counts_df %>%
+        dplyr::group_by(facet, factor_a) %>%
+        dplyr::summarise(total = sum(n), .groups = "drop") %>%
+        dplyr::group_by(facet) %>%
+        dplyr::summarise(Levels_A = sum(total > 0), .groups = "drop")
+
+      summary_df <- counts_df %>%
+        dplyr::left_join(levels_a_df, by = "facet") %>%
+        dplyr::mutate(
+          Status = ifelse(Levels_A >= 2, "OK", "Insufficient levels")
+        ) %>%
+        dplyr::arrange(facet, factor_a)
+
+      names(summary_df) <- c("Facet", "Level_A", "n", "Levels_A", "Status")
+      return(summary_df)
     }
 
     if (is_threeway) {
@@ -1453,6 +1505,124 @@ server <- function(input, output, session) {
       },
       labels = curve_facet_levels(),
       input_id = "var1_order"
+    )
+  })
+
+  output$bar_var2_order_ui <- renderUI({
+    req(result_df$data)
+    req(input$graph_type == "Bar plot")
+    req(identical(input$stat_model, "oneway_anova"))
+    req(input$bar_factor_a)
+    req(input$bar_factor_a %in% names(result_df$data))
+
+    labels <- unique(as.character(result_df$data[[input$bar_factor_a]]))
+    labels <- labels[!is.na(labels)]
+    if (length(labels) <= 1) {
+      return(NULL)
+    }
+
+    rank_list(
+      text = paste("Order of", input$bar_factor_a),
+      labels = labels,
+      input_id = "bar_var2_order"
+    )
+  })
+
+  output$bar_var1_order_ui <- renderUI({
+    req(result_df$data)
+    req(input$graph_type == "Bar plot")
+    req(identical(input$stat_model, "oneway_anova"))
+
+    if (is.null(input$bar_facet_var) || identical(input$bar_facet_var, "None")) {
+      return(NULL)
+    }
+
+    req(input$bar_facet_var %in% names(result_df$data))
+    labels <- unique(as.character(result_df$data[[input$bar_facet_var]]))
+    labels <- labels[!is.na(labels)]
+    if (length(labels) <= 1) {
+      return(NULL)
+    }
+
+    rank_list(
+      text = paste("Order of", input$bar_facet_var),
+      labels = labels,
+      input_id = "bar_var1_order"
+    )
+  })
+
+  output$bar_order_a_ui <- renderUI({
+    req(result_df$data)
+    req(input$graph_type == "Bar plot")
+    req(identical(input$stat_model, "twoway_anova") || identical(input$stat_model, "threeway_anova"))
+    req(input$bar_factor_a)
+    req(input$bar_factor_a %in% names(result_df$data))
+
+    labels <- unique(as.character(result_df$data[[input$bar_factor_a]]))
+    labels <- labels[!is.na(labels)]
+    if (length(labels) <= 1) return(NULL)
+
+    rank_list(
+      text = paste("Order of", input$bar_factor_a, "(Factor A)"),
+      labels = labels,
+      input_id = "bar_factor_a_order"
+    )
+  })
+
+  output$bar_order_b_ui <- renderUI({
+    req(result_df$data)
+    req(input$graph_type == "Bar plot")
+    req(identical(input$stat_model, "twoway_anova") || identical(input$stat_model, "threeway_anova"))
+    req(input$bar_factor_b)
+    req(input$bar_factor_b %in% names(result_df$data))
+
+    labels <- unique(as.character(result_df$data[[input$bar_factor_b]]))
+    labels <- labels[!is.na(labels)]
+    if (length(labels) <= 1) return(NULL)
+
+    rank_list(
+      text = paste("Order of", input$bar_factor_b, "(Factor B / x-axis)"),
+      labels = labels,
+      input_id = "bar_factor_b_order"
+    )
+  })
+
+  output$bar_order_c_ui <- renderUI({
+    req(result_df$data)
+    req(input$graph_type == "Bar plot")
+    req(identical(input$stat_model, "threeway_anova"))
+    req(input$bar_factor_c)
+    req(input$bar_factor_c %in% names(result_df$data))
+
+    labels <- unique(as.character(result_df$data[[input$bar_factor_c]]))
+    labels <- labels[!is.na(labels)]
+    if (length(labels) <= 1) return(NULL)
+
+    rank_list(
+      text = paste("Order of", input$bar_factor_c, "(Factor C)"),
+      labels = labels,
+      input_id = "bar_factor_c_order"
+    )
+  })
+
+  output$bar_order_facet_ui <- renderUI({
+    req(result_df$data)
+    req(input$graph_type == "Bar plot")
+    req(identical(input$stat_model, "twoway_anova") || identical(input$stat_model, "threeway_anova"))
+
+    if (is.null(input$bar_facet_var) || identical(input$bar_facet_var, "None")) {
+      return(NULL)
+    }
+
+    req(input$bar_facet_var %in% names(result_df$data))
+    labels <- unique(as.character(result_df$data[[input$bar_facet_var]]))
+    labels <- labels[!is.na(labels)]
+    if (length(labels) <= 1) return(NULL)
+
+    rank_list(
+      text = paste("Order of", input$bar_facet_var, "(Facet)"),
+      labels = labels,
+      input_id = "bar_facet_order"
     )
   })
   
@@ -1956,11 +2126,43 @@ server <- function(input, output, session) {
         }
       }
 
+      apply_requested_order <- function(df, col_name, requested_order = NULL) {
+        if (is.null(col_name) || !(col_name %in% names(df))) {
+          return(df)
+        }
+
+        current_levels <- unique(as.character(df[[col_name]]))
+        current_levels <- current_levels[!is.na(current_levels)]
+        if (length(current_levels) == 0) {
+          return(df)
+        }
+
+        if (is.null(requested_order) || length(requested_order) == 0) {
+          requested_order <- current_levels
+        }
+
+        full_order <- c(requested_order, setdiff(current_levels, requested_order))
+        df[[col_name]] <- factor(as.character(df[[col_name]]), levels = full_order)
+        df
+      }
+
+      ordered_bar_data <- result_df$data
+      if (identical(current_model, "twoway_anova") || identical(current_model, "threeway_anova")) {
+        ordered_bar_data <- apply_requested_order(ordered_bar_data, input$bar_factor_a, input$bar_factor_a_order)
+        ordered_bar_data <- apply_requested_order(ordered_bar_data, input$bar_factor_b, input$bar_factor_b_order)
+        if (identical(current_model, "threeway_anova")) {
+          ordered_bar_data <- apply_requested_order(ordered_bar_data, input$bar_factor_c, input$bar_factor_c_order)
+        }
+        if (!is.null(bar_facet_var)) {
+          ordered_bar_data <- apply_requested_order(ordered_bar_data, bar_facet_var, input$bar_facet_order)
+        }
+      }
+
       if (identical(current_model, "twoway_anova")) {
         req(input$bar_factor_a)
         req(input$bar_factor_b)
         barplot_results <- analyse_barplot_twoway(
-          data = result_df$data,
+          data = ordered_bar_data,
           factor_a = input$bar_factor_a,
           factor_b = input$bar_factor_b,
           measure_col = VALUE()[1],
@@ -1982,7 +2184,7 @@ server <- function(input, output, session) {
         req(input$bar_factor_b)
         req(input$bar_factor_c)
         barplot_results <- analyse_barplot_threeway(
-          data = result_df$data,
+          data = ordered_bar_data,
           factor_a = input$bar_factor_a,
           factor_b = input$bar_factor_b,
           factor_c = input$bar_factor_c,
@@ -2008,13 +2210,34 @@ server <- function(input, output, session) {
           bar_data[[bar_var1]] <- "AllData"
         }
 
+        bar_var2_levels <- unique(as.character(bar_data[[input$bar_factor_a]]))
+        bar_var2_levels <- bar_var2_levels[!is.na(bar_var2_levels)]
+        selected_var2_order <- input$bar_var2_order
+        if (is.null(selected_var2_order) || length(selected_var2_order) == 0) {
+          selected_var2_order <- bar_var2_levels
+        }
+        missing_var2 <- setdiff(bar_var2_levels, selected_var2_order)
+        bar_var2_order <- c(selected_var2_order, missing_var2)
+
+        bar_var1_order <- NULL
+        if (!identical(bar_var1, ".AllData")) {
+          bar_var1_levels <- unique(as.character(bar_data[[bar_var1]]))
+          bar_var1_levels <- bar_var1_levels[!is.na(bar_var1_levels)]
+          selected_var1_order <- input$bar_var1_order
+          if (is.null(selected_var1_order) || length(selected_var1_order) == 0) {
+            selected_var1_order <- bar_var1_levels
+          }
+          missing_var1 <- setdiff(bar_var1_levels, selected_var1_order)
+          bar_var1_order <- c(selected_var1_order, missing_var1)
+        }
+
         barplot_results <- analyse_barplot(
           data = bar_data,
           var1 = bar_var1,
           var2 = input$bar_factor_a,
           measure_col = VALUE()[1],
-          var1_order = NULL,
-          var2_order = NULL,
+          var1_order = bar_var1_order,
+          var2_order = bar_var2_order,
           fill_color = fill_color_value,
           line_color = line_color_value,
           point_color = point_color_value,
@@ -2146,6 +2369,61 @@ server <- function(input, output, session) {
         )
       })
 
+      output$report_summary_text <- renderText({
+        method_label <- if (!is.null(barplot_results$method) && identical(barplot_results$method, "art")) {
+          if (identical(current_model, "threeway_anova")) {
+            "Three-way ART + emmeans"
+          } else {
+            "Two-way ART + emmeans"
+          }
+        } else if (!is.null(barplot_results$method) && identical(barplot_results$method, "welch")) {
+          "One-way Welch ANOVA + Games-Howell"
+        } else if (!is.null(barplot_results$method) && identical(barplot_results$method, "kruskal")) {
+          if (!is.null(barplot_results$dunn)) "Kruskal-Wallis + Dunn" else "Kruskal-Wallis"
+        } else if (identical(current_model, "threeway_anova")) {
+          "Three-way ANOVA + emmeans"
+        } else if (identical(current_model, "twoway_anova")) {
+          "Two-way ANOVA + emmeans"
+        } else {
+          "One-way ANOVA + Tukey HSD"
+        }
+
+        posthoc_used <- if (!is.null(barplot_results$posthoc) && nrow(barplot_results$posthoc) > 0) {
+          "Yes (emmeans pairwise)"
+        } else if (!is.null(barplot_results$tukey) && nrow(barplot_results$tukey) > 0) {
+          "Yes (Tukey HSD)"
+        } else if (!is.null(barplot_results$games_howell) && nrow(barplot_results$games_howell) > 0) {
+          "Yes (Games-Howell)"
+        } else if (!is.null(barplot_results$dunn) && nrow(barplot_results$dunn) > 0) {
+          "Yes (Dunn)"
+        } else {
+          "No"
+        }
+
+        filtering <- barplot_results$filtering_summary
+        retained_ratio <- if (!is.null(filtering) && !is.null(filtering$total_rows) && filtering$total_rows > 0) {
+          paste0(round(100 * filtering$retained_rows / filtering$total_rows, 1), "%")
+        } else {
+          "Unavailable"
+        }
+
+        warning_text <- if (!is.null(barplot_results$message) && nzchar(barplot_results$message)) {
+          barplot_results$message
+        } else {
+          "None"
+        }
+
+        paste(
+          paste0("Analysis type: Bar Plot (", current_model, ")"),
+          paste0("Response parameter: ", VALUE()[1]),
+          paste0("Method used: ", method_label),
+          paste0("Post-hoc performed: ", posthoc_used),
+          paste0("Rows retained: ", if (!is.null(filtering)) filtering$retained_rows else "Unavailable", "/", if (!is.null(filtering)) filtering$total_rows else "Unavailable", " (", retained_ratio, ")"),
+          paste0("Warnings: ", warning_text),
+          sep = "\n"
+        )
+      })
+
       if (!is.null(barplot_results$message)) {
         showNotification(barplot_results$message, type = "message")
       }
@@ -2205,24 +2483,22 @@ server <- function(input, output, session) {
         long_data$.curve_facet <- as.character(long_data[[facet_base_col]])
       }
 
+      # TIME LOOKUP PREPARATION
+      # STRATEGY: Map selected parameter columns to validated numeric time values by exact name
+      # PURPOSE: Support any column naming style (e.g., L1, T24h, Week2)
+      time_lookup <- stats::setNames(
+        as.numeric(user_params$times),
+        as.character(user_params$selected_params)
+      )
+
       long_data <- long_data %>%
         mutate(
           # TIME VALUE MAPPING
-          # STRATEGY: Map time point names to user-provided numeric values
-          # PURPOSE: Convert column names (L1, L2, D1, D2) to actual time values
-          time_numeric = case_when(
-            str_detect(time_point, "L1") ~ user_params$times[1],
-            str_detect(time_point, "L2") ~ user_params$times[2],
-            str_detect(time_point, "L3") ~ user_params$times[3],
-            str_detect(time_point, "L4") ~ user_params$times[4],
-            str_detect(time_point, "L5") ~ user_params$times[5],
-            str_detect(time_point, "L6") ~ user_params$times[6],
-            str_detect(time_point, "L7") ~ user_params$times[7],
-            str_detect(time_point, "L8") ~ user_params$times[8],
-            str_detect(time_point, "L9") ~ user_params$times[9],
-            str_detect(time_point, "D1") ~ user_params$times[10],
-            str_detect(time_point, "D2") ~ user_params$times[11],
-            TRUE ~ NA_real_
+          # STRATEGY: First use exact validated mapping, then fallback to numeric extraction from label
+          # PURPOSE: Robust conversion when time labels use custom text patterns
+          time_numeric = dplyr::coalesce(
+            as.numeric(unname(time_lookup[as.character(time_point)])),
+            suppressWarnings(as.numeric(stringr::str_extract(as.character(time_point), "-?[0-9]+(?:\\.[0-9]+)?")))
           )
         )
 
@@ -2288,6 +2564,40 @@ server <- function(input, output, session) {
           paste0("Rows with missing parameter value: ", summary_info$missing_response),
           paste0("Rows with missing mapped time value: ", summary_info$missing_time),
           paste0("Rows with missing grouping/facet values: ", summary_info$missing_grouping_or_facet),
+          sep = "\n"
+        )
+      })
+
+      output$report_summary_text <- renderText({
+        stat_tbl <- curve_results$statistical_results
+        n_tests <- if (!is.null(stat_tbl)) nrow(stat_tbl) else 0
+        n_sig <- if (!is.null(stat_tbl) && "p.value" %in% names(stat_tbl)) {
+          sum(!is.na(stat_tbl$p.value) & stat_tbl$p.value < 0.05)
+        } else {
+          0
+        }
+
+        filtering <- curve_results$filtering_summary
+        retained_ratio <- if (!is.null(filtering) && !is.null(filtering$total_rows) && filtering$total_rows > 0) {
+          paste0(round(100 * filtering$retained_rows / filtering$total_rows, 1), "%")
+        } else {
+          "Unavailable"
+        }
+
+        k_info <- curve_results$k_summary
+        k_used <- if (!is.null(k_info) && !is.na(k_info$used_min) && !is.na(k_info$used_max)) {
+          if (identical(k_info$used_min, k_info$used_max)) as.character(k_info$used_min) else paste0(k_info$used_min, " to ", k_info$used_max)
+        } else {
+          "none"
+        }
+
+        paste(
+          "Analysis type: Line Chart (qGAM)",
+          paste0("Control group: ", ifelse(is.null(input$control_group) || identical(input$control_group, ""), "Not set", input$control_group)),
+          paste0("Selected columns: ", paste(input$column, collapse = ", ")),
+          paste0("qGAM k requested/used: ", input$k_param, " / ", k_used),
+          paste0("Control comparisons: ", n_sig, " significant out of ", n_tests, " tests"),
+          paste0("Rows retained: ", if (!is.null(filtering)) filtering$retained_rows else "Unavailable", "/", if (!is.null(filtering)) filtering$total_rows else "Unavailable", " (", retained_ratio, ")"),
           sep = "\n"
         )
       })

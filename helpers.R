@@ -2129,16 +2129,44 @@ build_converted_curve_plot <- function(data, x_col, facet_col, value_col, x_orde
   plot_data <- data[, required_cols]
   x_values <- plot_data[[x_col]]
   x_numeric <- suppressWarnings(as.numeric(as.character(x_values)))
+  x_breaks <- NULL
+
+  extract_first_numeric <- function(x) {
+    x_chr <- trimws(as.character(x))
+    out <- rep(NA_real_, length(x_chr))
+    has_match <- !is.na(x_chr) & grepl("-?[0-9]+(?:\\.[0-9]+)?", x_chr, perl = TRUE)
+    if (any(has_match)) {
+      extracted <- sub(".*?(-?[0-9]+(?:\\.[0-9]+)?).*", "\\1", x_chr[has_match], perl = TRUE)
+      out[has_match] <- suppressWarnings(as.numeric(extracted))
+    }
+    out
+  }
 
   if (all(is.na(x_numeric))) {
-    if (is.null(x_order) || length(x_order) == 0) {
-      x_order <- unique(as.character(x_values))
+    x_levels_raw <- if (is.null(x_order) || length(x_order) == 0) {
+      unique(as.character(x_values))
+    } else {
+      as.character(x_order)
     }
-    x_numeric <- as.numeric(factor(x_values, levels = x_order))
-    x_labels <- x_order
-    use_labels <- TRUE
+
+    parsed_levels <- extract_first_numeric(x_levels_raw)
+    parsed_ok <- all(!is.na(parsed_levels)) && length(unique(parsed_levels)) == length(parsed_levels)
+
+    if (parsed_ok) {
+      level_order_idx <- order(parsed_levels)
+      x_labels <- x_levels_raw[level_order_idx]
+      x_breaks <- parsed_levels[level_order_idx]
+      x_numeric <- parsed_levels[match(as.character(x_values), x_levels_raw)]
+      use_labels <- TRUE
+    } else {
+      x_numeric <- as.numeric(factor(x_values, levels = x_levels_raw))
+      x_labels <- x_levels_raw
+      x_breaks <- seq_along(x_labels)
+      use_labels <- TRUE
+    }
   } else {
     x_labels <- NULL
+    x_breaks <- NULL
     use_labels <- FALSE
   }
 
@@ -2284,7 +2312,7 @@ build_converted_curve_plot <- function(data, x_col, facet_col, value_col, x_orde
 
   if (use_labels) {
     converted_plot <- converted_plot +
-      scale_x_continuous(breaks = seq_along(x_labels), labels = x_labels)
+      scale_x_continuous(breaks = x_breaks, labels = x_labels)
   }
 
   return(list(

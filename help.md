@@ -86,7 +86,9 @@ Each row is one measured parameter; each column (after the first) is one plant a
    - `Grouping variable (color)`
    - `Stratification / Facet variable`
    - `Optional split variable`
-5. **Reorder Groups**: Drag and drop to change group/facet order
+5. **Reorder Groups**: Drag and drop to change factor/group/facet order
+   - Available in **Bar Plot** (`One-way`, `Two-way`, `Three-way`)
+   - Available in **Line Chart** mode
 
 #### Line Chart Specific Options
 
@@ -94,6 +96,7 @@ Each row is one measured parameter; each column (after the first) is one plant a
    - Click "Set Measurement Parameters" 
    - Enter time values for each measurement point
    - Specify the time unit (seconds, minutes, hours, etc.)
+   - Time labels are matched by exact selected column names, so custom labels such as `T0`, `T24h`, `D3`, or `Week2` are supported
 
 2. **Control Group**: Select which group to use as control for statistical comparisons
 
@@ -185,7 +188,7 @@ The **Analysis Results** tab (`Model Selection`) shows the decision reason and d
 - Bar chart with error bars (standard error)
 - Significance letters above bars
 - Statistical test results in export files
-- Design Check table (in Data Overview) with `Status` highlighting and compact summary counts
+- Design Check table (in Data Overview) for one-way/two-way/three-way models with `Status` highlighting and compact summary counts
 - Optional curve display available through the `Convert to Curve` button for ordered x variables such as time or dose
 
 ### Line Chart Analysis
@@ -256,6 +259,12 @@ The **Analysis Results** tab (`Model Selection`) shows the decision reason and d
 3. **Balanced design**: Try to have similar sample sizes across groups
 4. **Control selection**: Choose an appropriate control group for Line Chart analysis
 5. **Color choices**: Use contrasting colors for better visualization
+
+If you want ready-to-use examples, check the `sample_data/` subfolders:
+- `fluorcam_oneway_demo`
+- `fluorcam_twoway_demo`
+- `fluorcam_threeway_demo`
+- `fluorcam_convert_curve_demo`
 
 ---
 

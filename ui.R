@@ -653,6 +653,25 @@ ui <- dashboardPage(
                         uiOutput("columnSelect"),    # Column/parameter selection
                         uiOutput("bar_analysis_ui"), # Model/factor selection (bar plot)
                         uiOutput("editParamsBtn"),   # Time parameter configuration (curves only)
+
+                        # GROUP ORDERING INTERFACE (BAR PLOT ONE-WAY)
+                        # STRATEGY: Show sortable lists only when one-way bar plot is selected
+                        # PURPOSE: Allow users to control bar and facet ordering
+                        conditionalPanel(
+                          condition = "input.graph_type == 'Bar plot' && input.stat_model == 'oneway_anova'",
+                          helpText("Drag to reorder (Bar Plot):"),
+                          uiOutput("bar_var2_order_ui"),
+                          uiOutput("bar_var1_order_ui")
+                        ),
+
+                        conditionalPanel(
+                          condition = "input.graph_type == 'Bar plot' && (input.stat_model == 'twoway_anova' || input.stat_model == 'threeway_anova')",
+                          helpText("Drag to reorder (Bar Plot factors):"),
+                          uiOutput("bar_order_a_ui"),
+                          uiOutput("bar_order_b_ui"),
+                          uiOutput("bar_order_c_ui"),
+                          uiOutput("bar_order_facet_ui")
+                        ),
                         
                         # FACETING CONFIGURATION (CURVE ONLY)
                         # STRATEGY: Flexible grouping/faceting for curve workflow
@@ -1027,6 +1046,15 @@ ui <- dashboardPage(
                          div(class = "info-box",
                            h4("Data Filtering"),
                            verbatimTextOutput("filtering_text")
+                         )
+                       )
+                     ),
+
+                     fluidRow(
+                       column(12,
+                         div(class = "info-box",
+                           h4("Report Summary"),
+                           verbatimTextOutput("report_summary_text")
                          )
                        )
                      ),
