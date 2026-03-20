@@ -306,6 +306,14 @@ Rscript sample_data/generate_enriched_datasets.R
 Contributions to the FluorCam Toolbox are welcome! If you have feature requests or suggestions, feel free to contact us at <a href="mailto:cecile.lecampion@univ-amu.fr">cecile.lecampion@univ-amu.fr</a> or open an issue on the GitHub repository.  
 If you use a mesurement tool from a provider other than PSI and would like to see support for it in FluorCam Toolbox, please reach out to us.
 
+## Citation
+
+Use the software heritage ID :
+
+swh:1:dir:682a82008ee3327359bef28f0a2de7ad92c12b01;origin=https://github.com/cecile-lecampion/shiny_fluorcam;visit=swh:1:snp:3ee9d075e2c9ef73a96565a1cdafc305d2cc754d;anchor=swh:1:rev:05ae46a44a34b0cdb3022a1bb78f702bf64a4413
+
+
+
 ## License
 
 This project is licensed under the MIT License - see the repository for details.
