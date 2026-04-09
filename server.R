@@ -2896,6 +2896,12 @@ server <- function(input, output, session) {
             "Unknown"
           }
 
+          additional_params <- data.frame(
+            Parameter = c("Data Normality", "Statistical Test Used"),
+            Value = c(normality_status, statistical_test),
+            stringsAsFactors = FALSE
+          )
+
           if (identical(model_label, "oneway_anova")) {
             additional_params <- rbind(
               additional_params,
@@ -2906,12 +2912,6 @@ server <- function(input, output, session) {
               )
             )
           }
-          
-          additional_params <- data.frame(
-            Parameter = c("Data Normality", "Statistical Test Used"),
-            Value = c(normality_status, statistical_test),
-            stringsAsFactors = FALSE
-          )
           
         } else if (input$graph_type == "Curve") {
           k_summary_text <- if (!is.null(stats_data$k_summary)) {
@@ -3021,9 +3021,28 @@ server <- function(input, output, session) {
 
       }, error = function(e) {
         # ERROR HANDLING FOR EXPORT
-        # STRATEGY: Provide error file instead of failing silently
-        # PURPOSE: User feedback when export fails
-        writeLines(paste("Error exporting statistical data:", e$message), file)
+        # STRATEGY: Always return a valid zip file with diagnostic details
+        # PURPOSE: Avoid unreadable .zip downloads when export fails
+        tryCatch({
+          err_dir <- tempfile("stats_export_error_")
+          dir.create(err_dir, recursive = TRUE, showWarnings = FALSE)
+          err_file <- file.path(err_dir, "error_details.txt")
+          writeLines(
+            c(
+              paste("Error exporting statistical data:", e$message),
+              paste("Timestamp:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"))
+            ),
+            err_file
+          )
+          curr_dir <- getwd()
+          on.exit(setwd(curr_dir), add = TRUE)
+          setwd(err_dir)
+          utils::zip(zipfile = file, files = basename(err_file), flags = "-q")
+        }, error = function(zip_err) {
+          # Final fallback if zip creation itself fails
+          writeLines(paste("Error exporting statistical data:", e$message), file)
+          showNotification(paste("Error exporting statistical data:", zip_err$message), type = "error")
+        })
         showNotification(paste("Error exporting statistical data:", e$message), type = "error")
       })
     },
