@@ -2338,6 +2338,8 @@ analyse_curve <- function(df, col_vector,
                           facet_col,
                           control_group,
                           k = 5,  # Smoothing parameter for GAM
+                          grouping_order = NULL,  # User-specified order for grouping variable
+                          facet_order = NULL,     # User-specified order for facet variable
                           user_params = list()) {
 
   # ===========================================
@@ -2624,6 +2626,19 @@ analyse_curve <- function(df, col_vector,
     # STRATEGY: Clean and validate data before expensive computations
     # PURPOSE: Ensure data quality and prevent downstream errors
     df_clean <- validate_and_prepare_data(df, parameter_col, time_col, grouping_col, facet_col)
+
+    # APPLY USER-SPECIFIED ORDERING
+    # STRATEGY: Convert grouping and facet columns to factors with specified order
+    # PURPOSE: Respect user's drag-and-drop reordering of curves and facets
+    if (!is.null(grouping_order) && length(grouping_order) > 0) {
+      available_groups <- intersect(grouping_order, unique(df_clean[[grouping_col]]))
+      df_clean[[grouping_col]] <- factor(df_clean[[grouping_col]], levels = available_groups)
+    }
+    
+    if (!is.null(facet_order) && length(facet_order) > 0) {
+      available_facets <- intersect(facet_order, unique(df_clean[[facet_col]]))
+      df_clean[[facet_col]] <- factor(df_clean[[facet_col]], levels = available_facets)
+    }
 
     # Compute per-curve effective k for transparency and reporting.
     curve_k_table <- df_clean %>%

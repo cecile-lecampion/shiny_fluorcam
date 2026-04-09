@@ -2514,6 +2514,8 @@ server <- function(input, output, session) {
         facet_col = ".curve_facet",
         control_group = input$control_group,
         k = input$k_param,  # Use user-selected k value
+        grouping_order = input$var2_order,     # Apply user's drag-and-drop order for lines
+        facet_order = input$var1_order,        # Apply user's drag-and-drop order for facets
         user_params = reactiveValuesToList(user_params)
       )
 
