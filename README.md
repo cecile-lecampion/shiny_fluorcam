@@ -316,7 +316,7 @@ swh:1:dir:682a82008ee3327359bef28f0a2de7ad92c12b01;origin=https://github.com/cec
 
 ## License
 
-This project is licensed under the MIT License - see the repository for details.
+This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0) - see the [LICENSE](LICENSE) file for details.
 
 ## Support
 
