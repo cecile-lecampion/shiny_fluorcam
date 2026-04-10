@@ -2843,8 +2843,7 @@ analyse_curve <- function(df, col_vector,
       )
       annotation_df <- annotation_df[annotation_df$label != "", , drop = FALSE]
       annotation_df$x <- median(df_clean[[time_col]], na.rm = TRUE)
-      annotation_df$facet_rank <- ave(seq_len(nrow(annotation_df)), annotation_df$facet, FUN = seq_along)
-      annotation_df$y <- y_base + (annotation_df$facet_rank - 1) * y_step
+      annotation_df$y <- y_base + (ave(seq_len(nrow(annotation_df)), annotation_df$facet, FUN = seq_along) - 1) * y_step
       
       # ADD ANNOTATIONS TO PLOT
       # STRATEGY: Overlay text annotations for significant comparisons
