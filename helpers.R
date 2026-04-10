@@ -10,6 +10,37 @@
 
 
 # ===========================================
+# SHARED STATISTICAL FORMATTING HELPERS
+# ===========================================
+# PURPOSE: Keep p-value text consistent between plots and exports
+
+format_p_value_power10 <- function(p_value, threshold = 1e-3, digits = 2) {
+  if (is.na(p_value)) {
+    return(NA_character_)
+  }
+
+  if (p_value <= 0) {
+    min_exp <- floor(log10(.Machine$double.xmin))
+    return(paste0("< 1 x 10^", min_exp))
+  }
+
+  if (p_value < threshold) {
+    exponent <- floor(log10(p_value))
+    mantissa <- signif(p_value / (10^exponent), digits = digits)
+
+    if (mantissa >= 10) {
+      mantissa <- 1
+      exponent <- exponent + 1
+    }
+
+    mantissa_txt <- format(mantissa, trim = TRUE, scientific = FALSE)
+    return(paste0(mantissa_txt, " x 10^", exponent))
+  }
+
+  format.pval(p_value, digits = digits, eps = threshold)
+}
+
+# ===========================================
 # SECTION 1: DATA PROCESSING FUNCTIONS
 # ===========================================
 # PURPOSE: Handle FluorCam file processing and data preparation
@@ -2799,22 +2830,30 @@ analyse_curve <- function(df, col_vector,
       # ANNOTATION DATAFRAME PREPARATION
       # STRATEGY: Prepare text annotations with p-values
       # PURPOSE: Show statistical significance on plot
+      y_base <- max(df_clean[[parameter_col]], na.rm = TRUE) * 1.05
+      y_step <- max(abs(y_base) * 0.08, 0.02)
+
       annotation_df <- stat_results %>%
-        filter(!is.na(p.value)) %>%
+        mutate(p.value.num = suppressWarnings(as.numeric(p.value))) %>%
+        filter(!is.na(p.value.num)) %>%
         mutate(
           # P-VALUE FORMATTING
           # STRATEGY: Show p-values only when significant
           # PURPOSE: Avoid cluttering plot with non-significant results
-          label = ifelse(p.value < 0.05,
-                         paste0("p = ", format.pval(p.value, digits = 2, eps = .001)),
-                         ""),
+          label = ifelse(
+            p.value.num < 0.05,
+            paste0("p = ", format.pval(p.value.num, digits = 2, eps = .001)),
+            ""
+          ),
           # ANNOTATION POSITIONING
           # STRATEGY: Position above highest data points
           # PURPOSE: Visible but non-interfering placement
-          y = max(df_clean[[parameter_col]], na.rm = TRUE) * 1.05,
           x = median(df_clean[[time_col]], na.rm = TRUE)
         ) %>%
-        filter(label != "")  # Only keep significant results
+        filter(label != "") %>%  # Only keep significant results
+        group_by(facet) %>%
+        mutate(y = y_base + (dplyr::row_number() - 1) * y_step) %>%
+        ungroup()
       
       # ADD ANNOTATIONS TO PLOT
       # STRATEGY: Overlay text annotations for significant comparisons

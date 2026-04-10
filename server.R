@@ -2798,7 +2798,16 @@ server <- function(input, output, session) {
 
           if (!is.null(stats_data$statistical_results) && nrow(stats_data$statistical_results) > 0) {
             stats_file <- file.path(temp_dir, "curve_statistical_tests.txt")
-            write.table(stats_data$statistical_results, file = stats_file,
+            curve_stats_export <- stats_data$statistical_results
+            if ("p.value" %in% names(curve_stats_export)) {
+              curve_stats_export$p.value_power10 <- vapply(
+                curve_stats_export$p.value,
+                format_p_value_power10,
+                character(1)
+              )
+            }
+
+            write.table(curve_stats_export, file = stats_file,
                        sep = "\t", row.names = FALSE, quote = FALSE)
             file_list <- c(file_list, stats_file)
           }
