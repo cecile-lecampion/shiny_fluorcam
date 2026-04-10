@@ -2833,27 +2833,18 @@ analyse_curve <- function(df, col_vector,
       y_base <- max(df_clean[[parameter_col]], na.rm = TRUE) * 1.05
       y_step <- max(abs(y_base) * 0.08, 0.02)
 
-      annotation_df <- stat_results %>%
-        mutate(p.value.num = suppressWarnings(as.numeric(p.value))) %>%
-        filter(!is.na(p.value.num)) %>%
-        mutate(
-          # P-VALUE FORMATTING
-          # STRATEGY: Show p-values only when significant
-          # PURPOSE: Avoid cluttering plot with non-significant results
-          label = ifelse(
-            p.value.num < 0.05,
-            paste0("p = ", format.pval(p.value.num, digits = 2, eps = .001)),
-            ""
-          ),
-          # ANNOTATION POSITIONING
-          # STRATEGY: Position above highest data points
-          # PURPOSE: Visible but non-interfering placement
-          x = median(df_clean[[time_col]], na.rm = TRUE)
-        ) %>%
-        filter(label != "") %>%  # Only keep significant results
-        group_by(facet) %>%
-        mutate(y = y_base + (dplyr::row_number() - 1) * y_step) %>%
-        ungroup()
+      annotation_df <- as.data.frame(stat_results, stringsAsFactors = FALSE)
+      annotation_df$p.value.num <- suppressWarnings(as.numeric(annotation_df$p.value))
+      annotation_df <- annotation_df[!is.na(annotation_df$p.value.num), , drop = FALSE]
+      annotation_df$label <- ifelse(
+        annotation_df$p.value.num < 0.05,
+        paste0("p = ", format.pval(annotation_df$p.value.num, digits = 2, eps = .001)),
+        ""
+      )
+      annotation_df <- annotation_df[annotation_df$label != "", , drop = FALSE]
+      annotation_df$x <- median(df_clean[[time_col]], na.rm = TRUE)
+      annotation_df$facet_rank <- ave(seq_len(nrow(annotation_df)), annotation_df$facet, FUN = seq_along)
+      annotation_df$y <- y_base + (annotation_df$facet_rank - 1) * y_step
       
       # ADD ANNOTATIONS TO PLOT
       # STRATEGY: Overlay text annotations for significant comparisons
