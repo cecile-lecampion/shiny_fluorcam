@@ -181,30 +181,10 @@ gc()  # Garbage collection after package loading
 cat("FluorCam Analysis Toolbox ready!\n")
 cat("Total packages loaded:", length(required_packages), "\n")
 cat("================================================\n\n")
-# INCREASE FILE UPLOAD LIMIT (for large datasets)
-options(shiny.maxRequestSize = 100*1024^2)  # 100MB limit
-
-# SET CONSISTENT LOCALE
-tryCatch({
-  Sys.setlocale("LC_NUMERIC", "C")  # Consistent number formatting
-}, error = function(e) {
-  warning("Could not set LC_NUMERIC locale")
-})
-
-# MEMORY OPTIMIZATION
-gc()  # Garbage collection after package loading
-
-cat("FluorCam Analysis Toolbox ready!\n")
-cat("Total packages loaded:", length(required_packages), "\n")
-cat("================================================\n\n")
 
 # ===========================================
 # DEPLOYMENT CONFIGURATION
 # ===========================================
-# STRATEGY: Optimize for server deployment
-
-# INCREASE FILE UPLOAD LIMITS
-options(shiny.maxRequestSize = 100*1024^2)  # 100MB total upload limit
 
 # SESSION TIMEOUT SETTINGS
 options(shiny.sanitize.errors = TRUE)       # Sanitize error messages for security
