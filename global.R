@@ -74,6 +74,12 @@ required_packages <- c(
   "openxlsx"                  # Excel file handling - USED: server.R (export functionality)
 )
 
+# Normalize package names
+# Remove whitespace around package names and ensure unique package names to prevent redundant installation attempts.
+required_packages <- unique(trimws(required_packages))
+# Remove any empty strings that may have been introduced by trimming or duplicates.
+required_packages <- required_packages[nzchar(required_packages)]
+
 
 # ===========================================
 # SECTION 2: ENHANCED INSTALLATION STRATEGY
@@ -84,16 +90,30 @@ cat("FluorCam Analysis Toolbox - Package Management\n")
 cat("================================================\n")
 
 # STEP 1: IDENTIFY MISSING PACKAGES
-not_installed_packages <- setdiff(required_packages, installed.packages()[,"Package"])
+# requireNamespace() avoids building the full installed.packages() matrix.
+# This is more efficient than invoking installed.packages(), especially when many packages are already installed.
+# Apply requireNamespace to each package and capture the results in a logical vector indicating availability
+available_packages <- vapply(
+  required_packages,
+  requireNamespace,
+  FUN.VALUE = logical(1), # Force boolean output
+  quietly = TRUE
+)
+# Extract the names of packages that are not available (i.e., not installed)
+missing_packages <- required_packages[!available_packages]
 
-if (length(not_installed_packages) > 0) {
-  cat("Installing missing packages:", length(not_installed_packages), "packages\n")
-  cat("Packages to install:", paste(not_installed_packages, collapse = ", "), "\n")
+if (length(missing_packages) > 0) {
+  cat("Installing missing packages:", length(missing_packages), "packages\n")
+  cat("Packages to install:", paste(missing_packages, collapse = ", "), "\n")
   cat("This may take a few minutes...\n\n")
 
   # ENHANCED INSTALLATION WITH ERROR HANDLING
   tryCatch({
-    install.packages(not_installed_packages, dependencies = TRUE)
+    # Install only runtime dependencies, not suggested packages.
+    install.packages(
+      missing_packages,
+      dependencies = c("Depends", "Imports", "LinkingTo")
+    )
     cat("✓ Package installation completed successfully!\n\n")
   }, error = function(e) {
     cat("✗ Error during package installation:\n")
