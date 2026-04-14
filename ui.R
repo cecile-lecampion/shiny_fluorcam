@@ -7,8 +7,6 @@
 # - Provides step-by-step guided analysis process
 # - Supports both bar plot and curve analysis workflows
 
-source("global.R",  local = TRUE) # Load the global variables and packages
-
 ui <- dashboardPage(
   # ===========================================
   # HEADER SECTION

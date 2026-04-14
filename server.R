@@ -7,10 +7,7 @@
 # - Error handling and user feedback throughout
 # - Separation of data processing, UI generation, and analysis logic
 
-source("global.R",  local = TRUE) # Load the global variables and packages
-source("helpers.R", local = TRUE) # Load the helper functions
-
-server <- function(input, output, session) { 
+server <- function(input, output, session) {
 
   # ===========================================
   # SECTION 1: INITIALIZATION & SETUP
